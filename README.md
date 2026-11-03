@@ -56,9 +56,9 @@ OpenCV pupil tracking → PIPR waveform extraction →
 ┌─────────────────────────────────────────────────────────────┐
 │                    TANGLAWAN HEADSET                        │
 │                                                             │
-│  [OV9281 NOIR L] ──┐                  ┌── [LED Module L]   │
+│  [OV9281 NOIR L] ──┐                  ┌── [LED Module L]    │
 │                    ├── Jetson Nano ────┤                    │
-│  [OV9281 NOIR R] ──┘   B01 (5W)       └── [LED Module R]   │
+│  [OV9281 NOIR R] ──┘   B01 (5W)       └── [LED Module R]    │
 │                         │                                   │
 │                    [18650 BMS]                              │
 └─────────────────────────┼───────────────────────────────────┘
