@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="vision_capture_v1/vision_capture/web/assets/logo.png" alt="TANGLAWAN Logo" width="140"/>
+<img src="vision_capture/web/assets/logo.png" alt="TANGLAWAN Logo" width="140"/>
 
 # TANGLAWAN AI
 ### *Tanglaw ng Inobasyon, Liwanag sa Bawat Aksyon*
