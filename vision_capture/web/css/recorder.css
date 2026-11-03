@@ -1,0 +1,444 @@
+/* recorder.css
+   TANGLAWAN Dataset Recorder + Lab View
+   ============================================================ */
+
+   body {
+    margin: 0; padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #e2e8f0;
+    height: 100vh; overflow: hidden;
+    background-color: #010409;
+    background-image:
+        radial-gradient(circle at 50% 15%, rgba(0, 210, 255, 0.04) 0%, transparent 60%),
+        linear-gradient(rgba(0, 210, 255, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 210, 255, 0.08) 1px, transparent 1px);
+    background-size: 100% 100%, 35px 35px, 35px 35px;
+}
+
+.recorder-shell {
+    width: 98%; max-width: 1700px; height: 96vh;
+    margin: 2vh auto;
+    display: flex; flex-direction: column; gap: 6px;
+}
+
+/* ── HEADER ROW ─────────────────────────────────────────────────
+   FIX 1: title + status box now sit on ONE line, space-between.
+   Status box was previously inside the controls column, taking up
+   valuable vertical space and misaligning with the title.
+   ─────────────────────────────────────────────────────────────── */
+.tk-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 4px;
+    flex-shrink: 0;
+}
+.tk-header h1 {
+    color: #00d2ff; margin: 0;
+    font-size: 1.3rem; text-transform: uppercase;
+    text-shadow: 0 0 10px rgba(0, 210, 255, 0.4);
+    white-space: nowrap;
+}
+
+/* Status box sits inline with the heading — compact sizing */
+.tk-sys-status-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Consolas', monospace;
+    font-size: 0.8rem;
+}
+.sys-badge {
+    background: transparent; color: #00e5ff;
+    padding: 3px 8px; border-radius: 4px;
+    border: 1px solid rgba(0, 210, 255, 0.3);
+    letter-spacing: 1px; white-space: nowrap;
+}
+.status-pulse {
+    color: #4ade80; border-color: #4ade80;
+    box-shadow: inset 0 0 5px rgba(74, 222, 128, 0.1);
+}
+
+/* ── MAIN GRID ──────────────────────────────────────────────── */
+.tk-main-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 300px;
+    gap: 8px;
+    flex: 1; min-height: 0;
+}
+
+.tk-col {
+    display: grid; grid-template-rows: 1fr 1fr;
+    gap: 8px; min-height: 0; overflow: hidden;
+}
+
+.tk-controls-col {
+    display: flex; flex-direction: column;
+    gap: 6px; min-height: 0;
+}
+
+.tk-panel {
+    background: rgba(4, 13, 26, 0.65);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(0, 210, 255, 0.25);
+    box-shadow: inset 0 0 15px rgba(0, 210, 255, 0.05), 0 4px 15px rgba(0, 0, 0, 0.4);
+    border-radius: 8px; padding: 8px;
+    display: flex; flex-direction: column;
+    min-height: 0; max-height: 100%;
+    align-items: center; justify-content: center;
+    overflow: hidden;
+}
+
+.tk-panel-header {
+    color: #00d2ff; font-size: 0.72rem; font-weight: bold;
+    text-transform: uppercase; margin-bottom: 5px;
+    display: flex; justify-content: space-between; align-items: center;
+    text-shadow: 0 0 5px rgba(0, 210, 255, 0.5); flex-shrink: 0;
+    align-self: stretch;
+}
+.center-text { justify-content: center; color: #cbd5e1; text-shadow: none; margin-bottom: 4px; }
+
+.feed-wrapper {
+    position: relative;
+    width: 100%;
+    max-width: 42vh; /* Keeps it from overlapping the bottom UI */
+    margin: 0 auto;
+    background: #000;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+/* This ::before block is the universal hack that forces a perfect square */
+.feed-wrapper::before {
+    content: "";
+    display: block;
+    padding-top: 100%; 
+}
+
+.feed-wrapper img, .feed-wrapper canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: fill;
+}
+
+.btn-labview {
+    background: rgba(0, 210, 255, 0.1); color: #00d2ff;
+    border: 1px solid rgba(0, 210, 255, 0.3);
+    padding: 2px 6px; border-radius: 4px; font-size: 0.62rem; cursor: pointer;
+}
+.btn-labview:hover { background: rgba(0, 210, 255, 0.25); }
+
+/* ── CONTROL COLUMN INTERNALS ─────────────────────────────── */
+.control-panel-section { flex: 0 0 auto; }
+
+#patient-id { text-align: center; font-size: 0.95rem; letter-spacing: 2px; font-weight: bold; }
+
+.tk-input, .tk-btn {
+    background: rgba(0,0,0,0.4); color: #fff;
+    border: 1px solid rgba(0, 210, 255, 0.3); border-radius: 4px;
+    padding: 4px; font-size: 0.75rem; outline: none;
+}
+.tk-input:focus { border-color: #00d2ff; box-shadow: 0 0 5px rgba(0,210,255,0.5); }
+.block-input, .block-btn { width: 100%; box-sizing: border-box; }
+.tk-btn { background: rgba(0, 210, 255, 0.1); cursor: pointer; font-weight: bold; color: #00d2ff; transition: 0.2s; }
+.tk-btn:hover { background: rgba(0, 210, 255, 0.25); }
+
+.port-row { display: flex; justify-content: center; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: bold; margin: 2px 0; }
+.mini-select { padding: 2px; width: 45px; text-align: center; }
+
+.checkbox-row {
+    display: flex; justify-content: space-around; font-size: 0.75rem;
+    background: rgba(0,0,0,0.3); padding: 5px; border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.1); margin: 2px 0;
+}
+
+.transform-grid { display: grid; grid-template-columns: auto 1fr 1fr 1fr; gap: 4px; align-items: center; }
+.tf-label { color: #00d2ff; font-weight: bold; font-size: 0.72rem; text-align: right; margin-right: 4px; }
+.tk-btn-tf {
+    background: rgba(0,0,0,0.4); color: #cbd5e1;
+    border: 1px solid rgba(255,255,255,0.2); border-radius: 4px;
+    padding: 2px; cursor: pointer; font-size: 0.68rem; transition: 0.2s;
+}
+.tk-btn-tf:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+.tk-action-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 6px; flex: 1; min-height: 0;
+}
+.tk-btn-action {
+    background: rgba(4, 13, 26, 0.7); backdrop-filter: blur(4px);
+    color: #fff; border: 1px solid rgba(0, 210, 255, 0.3); border-radius: 6px;
+    padding: 0; height: 100%; cursor: pointer;
+    font-weight: bold; font-size: 0.85rem;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; transition: all 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+.tk-btn-action span { font-size: 0.6rem; color: #00d2ff; font-weight: normal; }
+.tk-btn-action:hover { background: rgba(0, 210, 255, 0.2); box-shadow: 0 4px 15px rgba(0,210,255,0.4); }
+.tk-btn-action:disabled { opacity: 0.3; cursor: not-allowed; }
+.btn-stop { border: 1px solid #e06c75; color: #e06c75; box-shadow: inset 0 0 8px rgba(224,108,117,0.2); }
+.btn-stop span { color: #e06c75; }
+.btn-stop:hover { background: rgba(224,108,117,0.15); box-shadow: 0 4px 15px rgba(224,108,117,0.4); }
+
+.tk-sync-row { display: flex; gap: 6px; flex-shrink: 0; }
+.half-btn { flex: 1; font-size: 0.7rem; padding: 5px; }
+
+/* ── BATTERY WIDGET ─────────────────────────────────────────── */
+.batt-wrapper { display: flex; align-items: center; gap: 4px; }
+.batt-body {
+    position: relative; width: 38px; height: 15px;
+    border: 2px solid #cbd5e1; border-radius: 3px;
+    overflow: hidden; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+}
+.batt-tip { width: 3px; height: 7px; background: #cbd5e1; border-radius: 0 2px 2px 0; margin-left: -4px; }
+.batt-fill { position: absolute; left: 0; top: 0; height: 100%; background: #cbd5e1; z-index: -1; transition: width 0.5s ease; }
+.batt-text { font-size: 0.62rem; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px #000; }
+.batt-volt { font-size: 0.68rem; color: #94a3b8; }
+.batt-charging .batt-body  { border-color: #4ade80; }
+.batt-charging .batt-tip   { background: #4ade80; }
+.batt-charging .batt-fill  { background: #4ade80; }
+
+/* ── LAB VIEW MODAL ─────────────────────────────────────────── */
+.modal-hidden { display: none !important; }
+
+#lab-view-modal {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(1, 4, 9, 0.95); z-index: 9999;
+    display: flex; justify-content: center; align-items: center;
+    padding: 16px; box-sizing: border-box;
+}
+
+.lab-window {
+    background: rgba(4, 13, 26, 0.65);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(0, 210, 255, 0.3);
+    width: 100%; max-width: 1800px; height: 100%;
+    border-radius: 12px;
+    display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* FIX 2: compact lab header so video + charts get more vertical room */
+.lab-header {
+    padding: 8px 16px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid rgba(0, 210, 255, 0.3);
+    flex-shrink: 0; gap: 12px;
+}
+.lab-header h2 {
+    margin: 0; font-size: 0.95rem;
+    color: #00d2ff; text-transform: uppercase; white-space: nowrap;
+}
+
+/* Protocol status + timer badges inline with the X button */
+.lab-header-right {
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.lab-proto-badge {
+    font-family: 'Consolas', monospace; font-size: 0.72rem;
+    color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.35);
+    padding: 3px 8px; border-radius: 4px; white-space: nowrap;
+}
+.lab-proto-timer { color: #00e5ff; border-color: rgba(0, 210, 255, 0.35); }
+
+.btn-close-lab {
+    background: #e06c75; color: white; border: none; border-radius: 4px;
+    padding: 5px 14px; font-weight: bold; font-size: 0.9rem; cursor: pointer;
+    transition: 0.2s; flex-shrink: 0;
+}
+.btn-close-lab:hover { background: #be5046; }
+
+/* FIX 2: more vertical weight on the feed+table row vs the charts row */
+.lab-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    grid-template-rows: 1.5fr 1fr;   /* was 1.1fr 0.9fr — give top half more room */
+    gap: 12px; padding: 12px;
+    flex: 1; min-height: 0; overflow: hidden;
+}
+
+.lab-panel {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px; padding: 10px;
+    display: flex; flex-direction: column;
+    min-height: 0; overflow: hidden;
+}
+.lab-panel-title {
+    text-align: center; font-size: 0.8rem; margin: 0 0 8px 0;
+    text-transform: uppercase; font-weight: bold; color: #00d2ff; flex-shrink: 0;
+}
+
+/* FIX 2: video panel — explicit min-height so it can't collapse to nothing */
+.lab-large-feed {
+    flex: 1; background: #000; border-radius: 4px;
+    display: flex; justify-content: center; align-items: center;
+    overflow: hidden; min-height: 160px;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+.lab-large-feed img { width: 100%; height: 100%; object-fit: contain; }
+
+.lab-telemetry-mini {
+    margin-top: 6px; text-align: center;
+    font-size: 0.85rem; color: #cbd5e1; flex-shrink: 0;
+}
+.lab-telemetry-mini b { color: #4ade80; }
+
+/* FIX: scrollable table prevents any overlap with charts */
+.lab-table-container {
+    flex: 1; overflow-y: auto; min-height: 0;
+    border: 1px solid rgba(255,255,255,0.05); border-radius: 4px;
+}
+.lab-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.lab-table th, .lab-table td { border-bottom: 1px solid rgba(255,255,255,0.05); padding: 6px 8px; text-align: center; }
+.lab-table th {
+    background: #046b88; font-weight: bold;
+    border-bottom: 2px solid rgba(0, 210, 255, 0.3); color: #fff;
+    position: sticky; top: 0; z-index: 2;
+}
+.lab-table td:first-child { text-align: left; font-weight: 500; }
+
+.lab-charts-row {
+    grid-column: 1 / -1;
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 12px; min-height: 0;
+}
+.chart-container { position: relative; flex: 1; width: 100%; min-height: 0; }
+
+/* ── NEW: COMPLETION MODAL ──────────────────────────────────── */
+#completion-modal {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(1, 4, 9, 0.92); z-index: 10000;
+    display: flex; justify-content: center; align-items: center;
+    backdrop-filter: blur(8px);
+}
+.completion-window {
+    background: rgba(4, 13, 26, 0.95);
+    border: 2px solid #4ade80;
+    border-radius: 12px;
+    padding: 40px;
+    text-align: center;
+    box-shadow: 0 0 35px rgba(74, 222, 128, 0.2);
+}
+.completion-window h2 {
+    color: #4ade80; font-size: 2.2rem; margin: 0 0 10px 0; letter-spacing: 2px;
+}
+.completion-window p {
+    color: #cbd5e1; font-size: 1.1rem; margin: 0 0 30px 0;
+}
+.completion-actions {
+    display: flex; gap: 20px; justify-content: center;
+}
+
+/* Adds a vivid green pulse to highlight the New Trial button */
+.pulse-highlight {
+    border-color: #4ade80 !important;
+    color: #4ade80 !important;
+    box-shadow: 0 0 15px rgba(74,222,128,0.4) !important;
+    animation: pulse-green 1.5s infinite;
+}
+@keyframes pulse-green {
+    0% { box-shadow: 0 0 15px rgba(74,222,128,0.4); }
+    50% { box-shadow: 0 0 25px rgba(74,222,128,0.8); }
+    100% { box-shadow: 0 0 15px rgba(74,222,128,0.4); }
+}
+
+/* ── MEDICAL INTAKE MODAL STYLES ──────────────────────────────────── */
+.intake-window {
+    background: rgba(4, 13, 26, 0.95);
+    border: 2px solid #00d2ff;
+    border-radius: 12px;
+    padding: 35px;
+    width: 95%;
+    max-width: 650px;
+    box-shadow: 0 0 40px rgba(0, 210, 255, 0.2);
+    color: #e2e8f0;
+    backdrop-filter: blur(15px);
+}
+.intake-window h2 {
+    color: #00d2ff;
+    margin: 0 0 5px 0;
+    font-size: 1.8rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.intake-window p {
+    color: #94a3b8;
+    font-size: 0.95rem;
+    margin: 0 0 25px 0;
+    border-bottom: 1px solid rgba(0, 210, 255, 0.2);
+    padding-bottom: 15px;
+}
+.form-section {
+    margin-bottom: 20px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.form-section h3 {
+    font-size: 0.9rem;
+    color: #38bdf8;
+    margin: 0 0 15px 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.form-row {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 12px;
+}
+.form-row:last-child {
+    margin-bottom: 0;
+}
+.form-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.form-group label {
+    font-size: 0.8rem;
+    color: #cbd5e1;
+    font-weight: 600;
+}
+.form-group label span {
+    color: #ef4444; 
+    margin-left: 3px;
+}
+.intake-input {
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    border: 1px solid rgba(0, 210, 255, 0.3);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    outline: none;
+    transition: all 0.2s ease;
+    color-scheme: dark; /* Forces the date picker calendar to be dark mode */
+    width: 100%;
+    box-sizing: border-box;
+}
+.intake-input:focus {
+    border-color: #00d2ff;
+    box-shadow: 0 0 8px rgba(0, 210, 255, 0.5);
+    background: rgba(0, 0, 0, 0.8);
+}
+.intake-input::placeholder {
+    color: #64748b;
+}
+.intake-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 15px;
+    margin-top: 25px;
+}
+.intake-actions .tk-btn-action {
+    padding: 12px 25px;
+    font-size: 1rem;
+    letter-spacing: 1px;
+}

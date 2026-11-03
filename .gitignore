@@ -1,0 +1,17 @@
+# Large Datasets & Annotations
+dataset/
+pupil_annotator/annotated/
+
+# Virtual Environments
+venv/
+
+# Hardware Submodules
+vision_capture/jetson-fan-ctl/
+
+# Dynamic Benchmark & Result Logs
+vision_capture/results_2026*/
+
+# Datasets
+*.pt
+*.pth
+*.onnx

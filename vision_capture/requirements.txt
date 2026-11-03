@@ -1,0 +1,11 @@
+# TANGLAWAN backend requirements -- pinned for Python 3.6 on Ubuntu 18.04 / Jetson Nano
+fastapi==0.83.0
+pydantic==1.8.2
+starlette==0.19.1
+uvicorn==0.16.0
+
+# Data export
+pandas
+openpyxl
+matplotlib
+plotly

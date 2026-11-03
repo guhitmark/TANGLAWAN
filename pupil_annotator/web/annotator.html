@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>RITnet Annotator | TANGLAWAN AI</title>
+    <link rel="icon" type="image/png" href="/logo.png">
+    <style>
+        body {
+            background-color: #010409;
+            background-image: radial-gradient(circle at 50% 15%, rgba(0, 210, 255, 0.04) 0%, transparent 60%), linear-gradient(rgba(0, 210, 255, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 210, 255, 0.08) 1px, transparent 1px);
+            background-size: 100% 100%, 35px 35px, 35px 35px;
+            background-attachment: fixed; color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0; padding: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column;
+        }
+
+        .slim-header {
+            display: flex; align-items: center; justify-content: space-between;
+            background: rgba(4, 13, 26, 0.85); border-bottom: 1px solid rgba(0, 210, 255, 0.3);
+            padding: 10px 25px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5); z-index: 10;
+        }
+        .header-left { display: flex; align-items: center; gap: 15px; }
+        .header-left img { height: 32px; filter: drop-shadow(0 0 8px rgba(0, 210, 255, 0.4)); }
+        .header-left h1 { color: #00e5ff; margin: 0; font-size: 1.4rem; letter-spacing: 2px; text-transform: uppercase; text-shadow: 0 0 10px rgba(0, 229, 255, 0.3); }
+
+        .header-right { display: flex; gap: 10px; font-family: 'Consolas', monospace; font-size: 0.75rem; align-items: center; }
+        .sys-badge { background: transparent; color: #00e5ff; padding: 4px 10px; border-radius: 4px; border: 1px solid rgba(0, 210, 255, 0.3); letter-spacing: 1px; text-transform: uppercase; }
+        .status-pulse { color: #4ade80; border-color: #4ade80; box-shadow: inset 0 0 5px rgba(74, 222, 128, 0.1); }
+
+        .batt-wrapper { display: flex; align-items: center; gap: 6px; margin-right: 10px;}
+        .batt-body { position: relative; width: 45px; height: 18px; border: 2px solid #cbd5e1; border-radius: 3px; overflow: hidden; z-index: 1; display: flex; align-items: center; justify-content: center; }
+        .batt-tip { width: 3px; height: 8px; background: #cbd5e1; border-radius: 0 2px 2px 0; margin-left: -6px; }
+        .batt-fill { position: absolute; left: 0; top: 0; height: 100%; background: #cbd5e1; z-index: -1; transition: width 0.5s ease; }
+        .batt-text { font-size: 0.7rem; font-weight: bold; color: #fff; text-shadow: 1px 1px 2px #000; }
+        .batt-volt { font-size: 0.75rem; color: #94a3b8; }
+        .batt-charging .batt-body { border-color: #4ade80; }
+        .batt-charging .batt-tip { background: #4ade80; }
+        .batt-charging .batt-fill { background: #4ade80; }
+
+        /* Workspace Grid */
+        .workspace { 
+            display: grid; 
+            grid-template-columns: 280px 1fr 240px; 
+            gap: 20px; padding: 15px; 
+            flex: 1; min-height: 0; box-sizing: border-box; 
+        }
+
+        .sidebar-panel, .status-panel, .main-stage { 
+            background: rgba(4, 13, 26, 0.65); border: 1px solid rgba(0, 210, 255, 0.2); 
+            border-radius: 8px; padding: 15px; display: flex; flex-direction: column; gap: 15px;
+            box-shadow: inset 0 0 15px rgba(0, 210, 255, 0.03); min-height: 0; overflow: hidden;
+        }
+        
+        .folder-list-container {
+            flex: 1; min-height: 0; background: rgba(4, 13, 26, 0.65); border: 1px solid rgba(0, 210, 255, 0.2);
+            border-radius: 8px; padding: 10px; overflow-y: auto; box-shadow: inset 0 0 15px rgba(0, 210, 255, 0.03);
+        }
+        .folder-list-container::-webkit-scrollbar { width: 6px; }
+        .folder-list-container::-webkit-scrollbar-thumb { background: #00e5ff; border-radius: 3px; }
+
+        .folder-header {
+            padding: 10px; background: #01040a; border: 1px solid rgba(0, 210, 255, 0.2);
+            color: #00e5ff; font-weight: bold; cursor: pointer; border-radius: 4px;
+            margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center;
+            font-family: 'Consolas', monospace; font-size: 0.65rem; transition: 0.2s;
+        }
+        .folder-header:hover { background: rgba(0, 210, 255, 0.1); }
+        .folder-header.active { background: rgba(0, 210, 255, 0.2); border-color: #00e5ff; box-shadow: inset 0 0 5px rgba(0, 229, 255, 0.2); }
+        
+        .folder-content { display: none; padding: 5px 0 10px 15px; }
+        .folder-content.open { display: block; }
+        
+        .frame-item {
+            padding: 6px 10px; border-left: 2px solid transparent; cursor: pointer; user-select: none; 
+            font-size: 0.7rem; color: #94a3b8; font-family: monospace; transition: 0.1s; margin-bottom: 2px;
+        }
+        .frame-item:hover { background: rgba(0, 210, 255, 0.05); }
+        .frame-item.selected { background: rgba(0, 210, 255, 0.15); color: #00e5ff; border-left-color: #00e5ff; }
+        
+        /* Updated Green/Red Tracking Colors */
+        .frame-item.labeled { color: #4ade80; border-left: 2px solid #4ade80; }
+        .frame-item.unlabeled { color: #ef4444; border-left: 2px solid #ef4444; }
+        
+        .frame-item.unlabeled-error { border-left: 3px solid #ef4444 !important; color: #ef4444 !important; background: rgba(239, 68, 68, 0.1) !important; font-weight: bold; }
+
+        .sidebar-actions {
+            background: rgba(4, 13, 26, 0.65); border: 1px solid rgba(0, 210, 255, 0.2);
+            border-radius: 8px; padding: 15px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;
+        }
+        input {
+            width: 100%; padding: 8px 10px; background: #01040a; color: #00e5ff; text-align: center;
+            border: 1px solid rgba(0, 210, 255, 0.3); border-radius: 4px; font-family: 'Consolas', monospace;
+            box-sizing: border-box; font-size: 0.9rem;
+        }
+        
+        .btn-action {
+            width: 100%; background: rgba(0, 229, 255, 0.1); color: #00e5ff; border: 1px solid #00e5ff;
+            padding: 10px 0; border-radius: 4px; font-size: 0.85rem; font-weight: bold;
+            cursor: pointer; transition: all 0.2s ease; letter-spacing: 1px;
+        }
+        .btn-action:hover { background: rgba(0, 229, 255, 0.2); box-shadow: 0 0 10px rgba(0, 229, 255, 0.3); }
+        .btn-export { background: rgba(74, 222, 128, 0.1); color: #4ade80; border-color: #4ade80; }
+        .btn-export:hover { background: rgba(74, 222, 128, 0.2); box-shadow: 0 0 10px rgba(74, 222, 128, 0.3); }
+        .btn-discard { background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: #ef4444; }
+        .btn-discard:hover { background: rgba(239, 68, 68, 0.2); box-shadow: 0 0 10px rgba(239, 68, 68, 0.3); }
+
+        /* MAIN CANVAS */
+        .main-stage { align-items: center; justify-content: flex-start; position: relative; padding: 15px; }
+        
+        /* Flex adjustments to maximize size */
+        .canvas-container { 
+            flex: 1; width: 100%; height: 100%; display: flex; align-items: center; 
+            justify-content: center; position: relative; min-height: 0; min-width: 0;
+        }
+        canvas { 
+            cursor: crosshair; background: #000; border: 2px solid #00e5ff; border-radius: 4px; 
+            box-shadow: 0 0 25px rgba(0, 229, 255, 0.15); 
+            
+            /* MAGIC TRICK TO FORCE CANVAS TO GROW */
+            height: 100%; 
+            width: auto;
+            aspect-ratio: 1 / 1; 
+            max-width: 100%;
+        }
+
+        /* Right Panel Metrics & Notes */
+        .status-panel { gap: 10px; }
+        .metric-box { text-align: center; background: #01040a; padding: 12px; border-radius: 8px; border: 1px solid rgba(0, 210, 255, 0.2); flex-shrink: 0; }
+        .metric-box h4 { margin: 0 0 5px 0; color: #94a3b8; font-size: 0.8rem; letter-spacing: 1px; }
+        .metric-box p { margin: 0; font-size: 1.8rem; font-family: 'Consolas', monospace; font-weight: bold; }
+        .m-total { color: #00e5ff; }
+        .m-labeled { color: #4ade80; }
+        .m-unlabeled { color: #ef4444; }
+
+        .instructions-box {
+            background: rgba(1, 4, 10, 0.65); border: 1px solid rgba(0, 210, 255, 0.2);
+            border-radius: 8px; padding: 15px; font-size: 0.75rem; color: #94a3b8; line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+
+    <header class="slim-header">
+        <div class="header-left">
+            <img src="/logo.png" alt="Logo">
+            <h1>RITnet Annotator</h1>
+        </div>
+        <div class="header-right">
+            <div class="batt-wrapper" id="batt-container">
+                <div class="batt-body">
+                    <div class="batt-fill" id="batt-fill" style="width: 0%;"></div>
+                    <span class="batt-text" id="batt-text">--%</span>
+                </div>
+                <div class="batt-tip"></div>
+                <span class="batt-volt" id="batt-volt">--V</span>
+            </div>
+            <span class="sys-badge status-pulse">SYS.ONLINE</span>
+            <span class="sys-badge">NODE: RITNET_ANNOTATOR</span>
+            <span class="sys-badge">PORT: 8000</span>
+        </div>
+    </header>
+
+    <div class="workspace">
+        <!-- LEFT PANEL -->
+        <div class="sidebar-panel">
+            <h3 style="margin:0; font-size: 0.9rem; color:#00e5ff; letter-spacing:1px; flex-shrink:0;">DATASET_TRACKER /</h3>
+            
+            <div class="folder-list-container" id="folder-container">
+                <p style="color: #94a3b8; font-size:0.8rem; text-align:center;">Scanning directories...</p>
+            </div>
+
+            <div class="sidebar-actions">
+                <label style="font-size: 0.75rem; color: #94a3b8; text-align: center;">Target Extraction Frames</label>
+                <input type="number" id="frame-count" value="100">
+                <button class="btn-action" onclick="extractActiveFolder()">➔ EXTRACT SELECTED</button>
+                <button class="btn-action btn-discard" onclick="discardDataset()">✖ DISCARD FRAMES</button>
+            </div>
+        </div>
+        
+        <!-- MAIN CANVAS -->
+        <div class="main-stage">
+            <h3 id="current-frame-lbl" style="color: #00e5ff; font-family: monospace; letter-spacing: 1px; margin:0 0 10px 0; align-self: flex-start;">AWAITING SELECTION</h3>
+            
+            <div class="canvas-container">
+                <!-- Native resolution remains 400x400 for mask generation math -->
+                <canvas id="canvas" width="400" height="400"></canvas>
+            </div>
+        </div>
+
+        <!-- RIGHT PANEL -->
+        <div class="status-panel">
+            <h3 style="margin:0; font-size: 0.9rem; color:#00e5ff; letter-spacing:1px; flex-shrink:0;">LIVE PROGRESS /</h3>
+            <div class="metric-box">
+                <h4>TOTAL FRAMES</h4>
+                <p class="m-total" id="prog-total">0</p>
+            </div>
+            <div class="metric-box">
+                <h4>ANNOTATED</h4>
+                <p class="m-labeled" id="prog-labeled">0</p>
+            </div>
+            <div class="metric-box">
+                <h4>UNLABELED</h4>
+                <p class="m-unlabeled" id="prog-unlabeled">0</p>
+            </div>
+
+            <button class="btn-action btn-export" onclick="exportDataset()" style="margin-top:10px; flex-shrink:0;">⬇ EXPORT BATCH</button>
+            <button class="btn-action" onclick="deleteSelectedFrames()" style="margin-top:10px; flex-shrink:0; background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: #ef4444;">🗑 DELETE FRAME (Blink)</button>
+
+            <!-- Spacer to push instructions to the bottom -->
+            <div style="flex:1;"></div>
+
+            <!-- Notes cleanly positioned -->
+            <div class="instructions-box">
+                <span style="color: #00e5ff; font-weight:bold;">Draw:</span> Radial Center Drag<br>
+                <span style="color: #facc15; font-weight:bold;">Move:</span> Drag center node<br>
+                <span style="color: #facc15; font-weight:bold;">Resize:</span> Drag perimeter nodes<br>
+                <span style="color: #cbd5e1; font-weight:bold;">Rotate:</span> Right-Click & Drag<br>
+                <span style="color: #ef4444; font-weight:bold;">Delete:</span> Backspace / Del<br>
+                <span style="color: #4ade80; font-weight:bold;">Navigation:</span> Up / Down Arrows<br>
+                <span style="color: #4ade80; font-weight:bold;">Multi-Select:</span> Shift + Up/Down
+            </div>
+        </div>
+    </div>
+
+    <script src="/web/annotator.js"></script>
+</body>
+</html>

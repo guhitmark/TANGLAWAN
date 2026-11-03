@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dataset Recorder | TANGLAWAN AI</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/recorder.css">
+<link rel="icon" type="image/png" href="/assets/logo.png">
+</head>
+<body>
+
+<div class="recorder-shell">
+    <header class="tk-header">
+        <h1>TANGLAWAN DATASET RECORDER</h1>
+        <div class="tk-sys-status-box">
+            <span class="sys-badge" id="batt-container">
+                <div class="batt-wrapper">
+                    <div class="batt-body">
+                        <div class="batt-fill" id="batt-fill" style="width: 0%;"></div>
+                        <span class="batt-text" id="batt-text">--%</span>
+                    </div>
+                    <div class="batt-tip"></div>
+                    <span class="batt-volt" id="batt-volt" style="margin-left:4px;"></span>
+                </div>
+            </span>
+            <span class="sys-badge status-pulse" id="rec-status-badge">SYS.STANDBY</span>
+            <span class="sys-badge" id="rec-timer">00:00 / 05:00</span>
+        </div>
+    </header>
+
+    <div class="tk-main-grid">
+
+        <div class="tk-col">
+            <div class="tk-panel">
+                <div class="tk-panel-header">LEFT EYE (RAW)</div>
+                <div class="feed-wrapper" style="width: 100%; aspect-ratio: 1/1; position: relative; margin: 0 auto; overflow: hidden; border-radius: 4px; background: #000;">
+                    <img id="raw-L" src="/api/recorder/stream/raw/L" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; object-fit: fill; z-index: 1;">
+                    <canvas id="crop-canvas-L" width="400" height="400" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 2; cursor: crosshair;"></canvas>
+                </div>
+            </div>
+            <div class="tk-panel">
+                <div class="tk-panel-header">RIGHT EYE (RAW)</div>
+                <div class="feed-wrapper" style="width: 100%; aspect-ratio: 1/1; position: relative; margin: 0 auto; overflow: hidden; border-radius: 4px; background: #000;">
+                    <img id="raw-R" src="/api/recorder/stream/raw/R" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; object-fit: fill; z-index: 1;">
+                    <canvas id="crop-canvas-R" width="400" height="400" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 2; cursor: crosshair;"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="tk-col">
+            <div class="tk-panel">
+                <div class="tk-panel-header">
+                    <span>LEFT EYE (CROPPED)</span>
+                    <button class="btn-labview" onclick="openLabView('L')">▣ Open Lab View</button>
+                </div>
+                <div class="feed-wrapper crop-view" style="width: 100%; aspect-ratio: 1/1; position: relative; margin: 0 auto; overflow: hidden; border-radius: 4px; background: #000;">
+                    <img id="crop-L" src="/api/recorder/stream/crop/L" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; object-fit: fill;">
+                </div>
+            </div>
+            <div class="tk-panel">
+                <div class="tk-panel-header">
+                    <span>RIGHT EYE (CROPPED)</span>
+                    <button class="btn-labview" onclick="openLabView('R')">▣ Open Lab View</button>
+                </div>
+                <div class="feed-wrapper crop-view" style="width: 100%; aspect-ratio: 1/1; position: relative; margin: 0 auto; overflow: hidden; border-radius: 4px; background: #000;">
+                    <img id="crop-R" src="/api/recorder/stream/crop/R" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; object-fit: fill;">
+                </div>
+            </div>
+        </div>
+
+        <div class="tk-col tk-controls-col">
+            <div class="tk-panel control-panel-section">
+                <div class="tk-panel-header center-text">TRIAL CONFIGURATION</div>
+                <input id="patient-id" class="tk-input block-input" placeholder="Enter 6-digit Patient ID" maxlength="6" style="margin-bottom: 5px;">
+
+                <select id="diagnosis" class="tk-input block-input" style="margin-bottom: 5px;">
+                    <option>Select Diagnosis...</option>
+                    <option value="RITNET_TRACKER">Pupil Tracker Recorder</option>
+                    <option value="UNKNOWN">UNKNOWN (Run Inference)</option>
+                    <option value="LBL_0 (No DR)">LBL_0 (No DR)</option>
+                    <option value="LBL_1 (Diabetic-DR)">LBL_1 (Diabetic-DR)</option>
+                    <option value="LBL_2 (Diabetic-NoDR)">LBL_2 (Diabetic-NoDR)</option>
+                </select>
+
+                <div class="port-row">
+                    <span>L: </span>
+                    <select id="leftPort" class="tk-input mini-select">
+                        <option value="0">0</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                    </select>
+                    <span> R: </span>
+                    <select id="rightPort" class="tk-input mini-select">
+                        <option value="0">0</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3" selected>3</option>
+                    </select>
+                </div>
+
+                <button id="btnSyncHardware" class="tk-btn block-btn" onclick="syncHardware()">⟳ Sync Hardware Ports</button>
+
+                <div class="checkbox-row">
+                    <label><input type="checkbox" id="enableLeft" checked> L</label>
+                    <label><input type="checkbox" id="enableRight" checked> R</label>
+                    <label><input type="checkbox" id="chk-mp4" checked> MP4</label>
+                </div>
+
+                <div class="tk-panel-header center-text" style="margin-top: 10px;">TRANSFORM</div>
+                <div class="transform-grid">
+                    <span class="tf-label">L:</span>
+                    <button class="tk-btn-tf" onclick="toggleFlip('L','H')">⇋ H</button>
+                    <button class="tk-btn-tf" onclick="toggleFlip('L','V')">⥯ V</button>
+                    <button class="tk-btn-tf" onclick="toggleRotate('L')">↻ 90&deg;</button>
+
+                    <span class="tf-label">R:</span>
+                    <button class="tk-btn-tf" onclick="toggleFlip('R','H')">⇋ H</button>
+                    <button class="tk-btn-tf" onclick="toggleFlip('R','V')">⥯ V</button>
+                    <button class="tk-btn-tf" onclick="toggleRotate('R')">↻ 90&deg;</button>
+                </div>
+            </div>
+
+            <div class="tk-action-grid">
+                <button id="btn-start"     class="tk-btn-action"          onclick="cmd('start')">  <span>[S]</span>START</button>
+                <button id="btn-pause"     class="tk-btn-action"          onclick="cmd('pause')">  <span>[P]</span>PAUSE</button>
+                <button id="btn-stop"      class="tk-btn-action btn-stop" onclick="cmd('stop')">   <span>[T]</span>STOP</button>
+                <button id="btn-discard"   class="tk-btn-action"          onclick="cmd('discard')"><span>[D]</span>DISCARD</button>
+                <button id="btn-save"      class="tk-btn-action"          onclick="cmd('save')">   <span>[V]</span>SAVE</button>
+                <button id="btn-new-trial" class="tk-btn-action"          onclick="startAnotherTrial()" disabled><span>[N]</span>NEW TRIAL</button>
+            </div>
+
+            <div class="tk-sync-row" style="margin-top: 6px;">
+                <button class="tk-btn half-btn" onclick="syncCrop('L')">L &rarr; R</button>
+                <button class="tk-btn half-btn" onclick="syncCrop('R')">R &larr; L</button>
+                <button class="tk-btn half-btn" onclick="resetCrop()" style="border-color: #facc15; color: #facc15;">Reset Crop</button>
+            </div>
+
+            <div style="display: none;">
+                <input type="radio" name="cropMode" value="rectangular" checked>
+                <input type="radio" name="cropMode" value="manual">
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="lab-view-modal" class="modal-hidden">
+    <div class="lab-window">
+        <header class="lab-header">
+            <h2 id="lab-title">TANGLAWAN Lab Suite &mdash; LEFT Eye Analysis</h2>
+            <div class="lab-header-right">
+                <span class="lab-proto-badge" id="lab-proto-phase">SYS.STANDBY</span>
+                <span class="lab-proto-badge lab-proto-timer" id="lab-proto-timer">00:00 / 05:00</span>
+                <button class="btn-close-lab" onclick="closeLabView()">X</button>
+            </div>
+        </header>
+
+        <div class="lab-grid">
+            <div class="lab-panel">
+                <h3 class="lab-panel-title">CROPPED SENSOR VIEW &amp; ISOLATED ROI</h3>
+                <div class="lab-large-feed">
+                    <img id="lab-video-stream" src="">
+                </div>
+                <div class="lab-telemetry-mini">
+                    <span>Live FPS: <b id="lab-fps">--</b></span> |
+                    <span>Diameter: <b id="lab-diam">--</b> mm</span> |
+                    <span>Confidence: <b id="lab-conf">--</b></span>
+                </div>
+            </div>
+
+            <div class="lab-panel">
+                <h3 class="lab-panel-title">LIVE CLINICAL TELEMETRY</h3>
+                <div class="lab-table-container">
+                    <table class="lab-table">
+                        <thead>
+                            <tr>
+                                <th>Clinical Parameter</th>
+                                <th>Red Stimulus</th>
+                                <th>Blue Stimulus</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lab-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="lab-charts-row">
+                <div class="lab-panel">
+                    <h3 class="lab-panel-title" style="color: #ef4444;">RED STIMULUS PLR WAVEFORM</h3>
+                    <div class="chart-container">
+                        <canvas id="chartRed"  width="800" height="300" style="width:100%; height:100%;"></canvas>
+                    </div>
+                </div>
+                <div class="lab-panel">
+                    <h3 class="lab-panel-title" style="color: #3b82f6;">BLUE STIMULUS PLR WAVEFORM</h3>
+                    <div class="chart-container">
+                        <canvas id="chartBlue" width="800" height="300" style="width:100%; height:100%;"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="completion-modal" class="modal-hidden">
+    <div class="completion-window">
+        <h2>PROTOCOL COMPLETE</h2>
+        <!-- Added ID here -->
+        <p id="completion-text">The 5-minute PLR diagnostic sequence has finished.</p>
+        <div class="completion-actions">
+            <button id="btn-popup-save" class="tk-btn-action" onclick="cmd('save')" style="padding: 15px 30px; font-size: 1.1rem; border-color:#00d2ff;">SAVE DATA</button>
+            <button class="tk-btn-action" onclick="startAnotherTrial()" style="padding: 15px 30px; font-size: 1.1rem; border-color: #4ade80; color: #4ade80;">START ANOTHER TRIAL</button>
+        </div>
+    </div>
+</div>
+
+<div id="patient-details-modal" class="modal-hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(1, 4, 9, 0.95); z-index: 10000; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(8px);">
+    <div class="intake-window">
+        <h2>Clinical Intake Details</h2>
+        <p>Required information for the automated diagnostic report.</p>
+        
+        <div class="form-section">
+            <h3>Physician Details</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Attending Ophthalmologist <span>*</span></label>
+                    <input type="text" id="dr-name" class="intake-input" placeholder="e.g. Juan Dela Cruz">
+                </div>
+                <div class="form-group">
+                    <label>PRC License Number <span>*</span></label>
+                    <input type="text" id="dr-license" class="intake-input" placeholder="e.g. 1234567">
+                </div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h3>Patient Demographics</h3>
+            <div class="form-row">
+                <div class="form-group" style="flex: 2;">
+                    <label>Full Name <span>*</span></label>
+                    <input type="text" id="patient-name" class="intake-input" placeholder="First Last">
+                </div>
+                <div class="form-group" style="flex: 1.5;">
+                    <label>Date of Birth <span>*</span></label>
+                    <input type="date" id="patient-dob" class="intake-input">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Sex <span>*</span></label>
+                    <select id="patient-sex" class="intake-input">
+                        <option value="">Select</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Prefer not to say">Prefer not to say</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h3>Clinical Metrics (Optional)</h3>
+            <div class="form-row">
+                <div class="form-group" style="flex: 2;">
+                    <label>General Status / History</label>
+                    <input type="text" id="patient-status" class="intake-input" placeholder="e.g. Type 2 Diabetes, 5yrs">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>HbA1c (%)</label>
+                    <input type="text" id="patient-hba1c" class="intake-input" placeholder="e.g. 7.5%">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>BP (mmHg)</label>
+                    <input type="text" id="patient-bp" class="intake-input" placeholder="e.g. 120/80">
+                </div>
+            </div>
+        </div>
+
+        <div class="intake-actions">
+            <button class="tk-btn-action btn-stop" onclick="document.getElementById('patient-details-modal').classList.add('modal-hidden');" style="padding: 10px 20px;">CANCEL</button>
+            <button class="tk-btn-action" onclick="submitInferenceSave()" style="padding: 10px 20px; border-color:#00d2ff;">CONFIRM DETAILS</button>
+        </div>
+    </div>
+</div>
+
+<div id="inference-modal" class="modal-hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(1, 4, 9, 0.95); z-index: 10001; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(8px);">
+    <div class="completion-window" style="border-color: #a855f7; box-shadow: 0 0 35px rgba(168, 85, 247, 0.2);">
+        <h2 style="color: #a855f7;">AI INFERENCE COMPLETE</h2>
+        <p>1D-CNN classification on pupillary light reflex waveform.</p>
+        <div style="font-size: 2.2rem; font-weight: bold; color: #fff; margin-bottom: 5px;" id="inference-result">LBL_X</div>
+        <div style="font-size: 1rem; color: #cbd5e1; margin-bottom: 30px;">Model Confidence: <span id="inference-confidence" style="color: #4ade80; font-weight: bold;">--</span>%</div>
+        <div class="completion-actions">
+            <button class="tk-btn-action" onclick="viewDiagnosticReport()" style="padding: 15px 30px; font-size: 1.1rem; border-color: #a855f7; color: #a855f7;">VIEW REPORT & CLOSE</button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/recorder.js"></script>
+</body>
+</html>
