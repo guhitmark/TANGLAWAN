@@ -11,6 +11,7 @@ from .mode_manager import TrackerModeOverride
 # ── Fixed dataset root ────────────────────────────────────────────
 DATASET_ROOT = "/home/tanglawan/Desktop/vision_capture_v1/dataset"
 
+
 def _finalize_videos(temp_avi, final_avi, final_mp4, actual_fps, save_mp4):
     if not os.path.exists(temp_avi):
         return
@@ -37,6 +38,7 @@ def _finalize_videos(temp_avi, final_avi, final_mp4, actual_fps, save_mp4):
         if os.path.exists(temp_avi):
             try: os.remove(temp_avi)
             except Exception: pass
+
 
 def export_graph_png(session_data_eye, export_path, title):
     import matplotlib
@@ -65,6 +67,10 @@ def export_graph_png(session_data_eye, export_path, title):
     t_r_line, y_r_line, t_r_drop = [], [], []
     t_b_line, y_b_line, t_b_drop = [], [], []
     
+    # --- FORWARD FILL VARIABLES ---
+    last_valid_red = np.nan
+    last_valid_blue = np.nan
+    
     for r in session_data_eye:
         t, valid = r["t"], r["valid"]
         
@@ -76,21 +82,25 @@ def export_graph_png(session_data_eye, export_path, title):
         is_good = valid and not np.isnan(y) and y > 0
         
         if t <= 60:
-            t_r_line.append(t)
             if is_good:
-                y_r_line.append(y)
+                last_valid_red = y
             else:
-                y_r_line.append(np.nan)
                 t_r_drop.append(t)
+            
+            if not np.isnan(last_valid_red):
+                t_r_line.append(t)
+                y_r_line.append(last_valid_red)
                 
         # UPDATED TIMELINE FOR THE 3-MINUTE PROTOCOL (120s to 180s)
         elif 120 <= t <= 180:
-            t_b_line.append(t)
             if is_good:
-                y_b_line.append(y)
+                last_valid_blue = y
             else:
-                y_b_line.append(np.nan)
                 t_b_drop.append(t)
+                
+            if not np.isnan(last_valid_blue):
+                t_b_line.append(t)
+                y_b_line.append(last_valid_blue)
 
     if t_r_line: ax_red.plot(t_r_line, y_r_line, color="#dc2626", lw=1.5, label="Valid Track")
     if t_b_line: ax_blue.plot(t_b_line, y_b_line, color="#2563eb", lw=1.5, label="Valid Track")
@@ -105,6 +115,7 @@ def export_graph_png(session_data_eye, export_path, title):
     fig.savefig(export_path, bbox_inches="tight")
     plt.close(fig)
 
+
 def export_interactive_html(session_data_eye, export_path, title):
     import plotly.graph_objects as go
 
@@ -113,6 +124,10 @@ def export_interactive_html(session_data_eye, export_path, title):
 
     t_r_line, y_r_line, t_r_drop = [], [], []
     t_b_line, y_b_line, t_b_drop = [], [], []
+    
+    # --- FORWARD FILL VARIABLES ---
+    last_valid_red = np.nan
+    last_valid_blue = np.nan
     
     for r in session_data_eye:
         t, valid = r["t"], r["valid"]
@@ -124,21 +139,25 @@ def export_interactive_html(session_data_eye, export_path, title):
         is_good = valid and not np.isnan(y) and y > 0
         
         if t <= 60:
-            t_r_line.append(t)
             if is_good:
-                y_r_line.append(y)
+                last_valid_red = y
             else:
-                y_r_line.append(np.nan)
                 t_r_drop.append(t)
+                
+            if not np.isnan(last_valid_red):
+                t_r_line.append(t)
+                y_r_line.append(last_valid_red)
                 
         # UPDATED TIMELINE FOR THE 3-MINUTE PROTOCOL (120s to 180s)
         elif 120 <= t <= 180:
-            t_b_line.append(t)
             if is_good:
-                y_b_line.append(y)
+                last_valid_blue = y
             else:
-                y_b_line.append(np.nan)
                 t_b_drop.append(t)
+                
+            if not np.isnan(last_valid_blue):
+                t_b_line.append(t)
+                y_b_line.append(last_valid_blue)
 
     fig = go.Figure()
     
@@ -163,6 +182,7 @@ def export_interactive_html(session_data_eye, export_path, title):
         xaxis=dict(range=[0, 180], rangeslider=dict(visible=True, thickness=0.08)),
     )
     fig.write_html(export_path, config={"scrollZoom": True, "displayModeBar": True})
+
 
 def export_excel_report(session_data_eye, export_path, r_met, b_met):
     import pandas as pd
@@ -195,6 +215,7 @@ def export_excel_report(session_data_eye, export_path, r_met, b_met):
         df.to_excel(writer, sheet_name="Raw Data", index=False)
         df_params.to_excel(writer, sheet_name="Clinical Parameters", index=False)
 
+
 def export_metadata_json(state, export_path, eye_label, r_met, b_met):
     PARAM_LABELS = [
         "d_base", "d_min", "constrict_amp", "constrict_lat_ms",
@@ -215,6 +236,7 @@ def export_metadata_json(state, export_path, eye_label, r_met, b_met):
     }
     with open(export_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
+
 
 def export_all(state):
     """Full save: videos, PNG, HTML, XLSX, CSV, JSON metadata."""

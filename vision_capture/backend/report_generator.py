@@ -35,20 +35,35 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
             t_red, y_red = [], []
             t_blue, y_blue = [], []
             
+            # --- FORWARD FILL VARIABLES ---
+            last_valid_red = float('nan')
+            last_valid_blue = float('nan')
+            
             for d in data:
                 t = d["t"]
                 y = d["y"]
                 
                 is_valid = d["valid"] and y is not None and not math.isnan(y) and y > 1.0
-                plot_val = y if is_valid else float('nan')
                 
+                # Plot Red Phase
                 if t <= 60:
-                    t_red.append(t)
-                    y_red.append(plot_val)
-                # UPDATED TIMELINE FOR THE 3-MINUTE PROTOCOL (120s to 180s)
+                    if is_valid:
+                        last_valid_red = y
+                    
+                    # Only append if we have established a baseline (not nan)
+                    if not math.isnan(last_valid_red):
+                        t_red.append(t)
+                        y_red.append(last_valid_red)
+                        
+                # Plot Blue Phase (120s to 180s)
                 elif 120 <= t <= 180:
-                    t_blue.append(t)
-                    y_blue.append(plot_val)
+                    if is_valid:
+                        last_valid_blue = y
+                        
+                    # Only append if we have established a baseline (not nan)
+                    if not math.isnan(last_valid_blue):
+                        t_blue.append(t)
+                        y_blue.append(last_valid_blue)
                     
             if t_red:
                 ax1.plot(t_red, y_red, label=f"{eye} Eye" if eye == "L" else "", color=color, linewidth=1.0)
@@ -189,7 +204,7 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
         <!-- NEW BOTTOM ACTION AREA -->
         <div class="action-container">
             <button class="btn btn-print" onclick="window.print()">🖨 Print to PDF</button>
-            <button class="btn btn-upload" onclick="uploadData()">☁️ Upload to Web</button>
+            <button class="btn btn-upload" onclick="uploadData()">☁️ Upload to Supabase</button>
             
             <div class="footer">
                 This report was generated automatically by the TANGLAWAN Edge Inference pipeline. <br>
@@ -199,7 +214,50 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
 
         <script>
             function uploadData() {{
-                alert("Upload feature ready.\\n\\nOnce the central cloud endpoint is configured, this button will push the JSON telemetry and diagnostic report to the master database.");
+                const btn = document.querySelector('.btn-upload');
+                btn.innerText = "☁️ UPLOADING TO SUPABASE...";
+                btn.disabled = true;
+
+                const payload = {{
+                    patient_id: "{patient_id}",
+                    dr_name: "{dr_name}",
+                    dr_license: "{dr_license}",
+                    diagnosis: "{prediction}",
+                    confidence: "{confidence}",
+                    timestamp: "{file_time}",
+                    report_html_b64: btoa(unescape(encodeURIComponent(document.documentElement.outerHTML)))
+                }};
+
+                const SUPABASE_URL = "https://zkmtfpeoihcxamtjatgh.supabase.co/rest/v1/tanglawan_reports";
+                const SUPABASE_KEY = "sb_publishable_mIHOi8dllJ0BSou4PY1CZA_XjXCaYgG";
+
+                // Direct fetch to Supabase REST API
+                fetch(SUPABASE_URL, {{
+                    method: 'POST',
+                    headers: {{ 
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${{SUPABASE_KEY}}`,
+                        'Prefer': 'return=minimal'
+                    }},
+                    body: JSON.stringify(payload)
+                }})
+                .then(async r => {{
+                    if(r.ok) {{
+                        btn.innerText = "✓ DB SYNC SUCCESS";
+                        btn.style.backgroundColor = "#16a34a";
+                    }} else {{
+                        const err = await r.text();
+                        alert("Supabase Sync Failed: " + err);
+                        btn.innerText = "☁️ Upload to Supabase";
+                        btn.disabled = false;
+                    }}
+                }})
+                .catch(err => {{
+                    alert("Network Error: " + err);
+                    btn.innerText = "☁️ Upload to Supabase";
+                    btn.disabled = false;
+                }});
             }}
         </script>
     </body>

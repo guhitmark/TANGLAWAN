@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import List
 import os
 import copy
+import requests
 
 class TransformPayload(BaseModel):
     eye: str
@@ -30,12 +31,61 @@ class EnabledPayload(BaseModel):
     left_enabled: bool
     right_enabled: bool
 
+# --- NEW Payload Model for Supabase Sync ---
+class SyncSupabasePayload(BaseModel):
+    patient_id: str
+    dr_name: str
+    dr_license: str
+    diagnosis: str
+    confidence: str
+    timestamp: str
+    report_html_b64: str
+
 def build_router(state, workers):
     router = APIRouter()
 
+    # --- NEW Route for Direct Supabase Sync ---
+    @router.post("/sync_supabase")
+    def sync_supabase(payload: SyncSupabasePayload):
+        # Your specific Supabase Configuration
+        SUPABASE_URL = "https://zkmtfpeoihcxamtjatgh.supabase.co/rest/v1/tanglawan_reports"
+        SUPABASE_KEY = "sb_publishable_mIHOi8dllJ0BSou4PY1CZA_XjXCaYgG"
+        
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+        }
+        
+        # Structure the row exactly as your Supabase table columns
+        data = {
+            "patient_id": payload.patient_id,
+            "dr_name": payload.dr_name,
+            "dr_license": payload.dr_license,
+            "diagnosis": payload.diagnosis,
+            "confidence": payload.confidence,
+            "timestamp": payload.timestamp,
+            "report_html_b64": payload.report_html_b64
+        }
+        
+        try:
+            response = requests.post(
+                SUPABASE_URL, 
+                json=data,
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code in [200, 201]:
+                return {"ok": True}
+            else:
+                return {"ok": False, "error": f"Supabase returned {response.status_code}: {response.text}"}
+        except Exception as e:
+            return {"ok": False, "error": f"Could not connect to Supabase: {str(e)}"}
+
     @router.post("/transform")
     def apply_transform(payload: TransformPayload):
-        # Update the transform dictionary in the central state, not on the worker thread
         t = state.transform[payload.eye]
         
         if payload.rotate:
@@ -113,16 +163,13 @@ def build_router(state, workers):
 
     @router.post("/save")
     def save_session():
-        # Hardcoded static paths to enforce dataset integrity
         base_dir = os.path.expanduser("~/Desktop/vision_capture_v1/03_TANGLAWAN_DATASET")
         left_dir = os.path.join(base_dir, "left")
         right_dir = os.path.join(base_dir, "right")
         
-        # Ensure target directories exist before writing
         os.makedirs(left_dir, exist_ok=True)
         os.makedirs(right_dir, exist_ok=True)
         
-        # Execute save command explicitly mapping to verified eye directories
         success = state.save(left_path=left_dir, right_path=right_dir)
         
         if success:
