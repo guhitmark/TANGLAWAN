@@ -31,34 +31,56 @@ class EnabledPayload(BaseModel):
     left_enabled: bool
     right_enabled: bool
 
-# --- NEW Payload Model for Supabase Sync ---
-class SyncSupabasePayload(BaseModel):
+class SyncSupabasePdfPayload(BaseModel):
     patient_id: str
     dr_name: str
     dr_license: str
     diagnosis: str
     confidence: str
     timestamp: str
-    report_html_b64: str
+    pdf_filename: str
+    pdf_path: str
 
 def build_router(state, workers):
     router = APIRouter()
 
-    # --- NEW Route for Direct Supabase Sync ---
-    @router.post("/sync_supabase")
-    def sync_supabase(payload: SyncSupabasePayload):
-        # Your specific Supabase Configuration
-        SUPABASE_URL = "https://zkmtfpeoihcxamtjatgh.supabase.co/rest/v1/tanglawan_reports"
+    @router.post("/sync_supabase_pdf")
+    def sync_supabase_pdf(payload: SyncSupabasePdfPayload):
+        SUPABASE_URL = "https://zkmtfpeoihcxamtjatgh.supabase.co"
         SUPABASE_KEY = "sb_publishable_mIHOi8dllJ0BSou4PY1CZA_XjXCaYgG"
         
         headers = {
             "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal"
+            "Authorization": f"Bearer {SUPABASE_KEY}"
         }
         
-        # Structure the row exactly as your Supabase table columns
+        # 1. Upload the PDF file to Supabase Storage Bucket ('tanglawan_pdfs')
+        storage_url = f"{SUPABASE_URL}/storage/v1/object/tanglawan_pdfs/{payload.pdf_filename}"
+        
+        try:
+            with open(payload.pdf_path, 'rb') as f:
+                pdf_data = f.read()
+                
+            upload_headers = headers.copy()
+            upload_headers["Content-Type"] = "application/pdf"
+            
+            upload_res = requests.post(storage_url, headers=upload_headers, data=pdf_data, timeout=15)
+            if upload_res.status_code not in [200, 201]:
+                return {"ok": False, "error": f"Storage Upload Failed: {upload_res.text}"}
+                
+        except Exception as e:
+            return {"ok": False, "error": f"PDF Read Error: {str(e)}"}
+            
+        # 2. Get the Public URL for the uploaded PDF
+        public_pdf_url = f"{SUPABASE_URL}/storage/v1/object/public/tanglawan_pdfs/{payload.pdf_filename}"
+        
+        # 3. Insert the record into the 'tanglawan_reports' Database Table
+        db_url = f"{SUPABASE_URL}/rest/v1/tanglawan_reports"
+        
+        db_headers = headers.copy()
+        db_headers["Content-Type"] = "application/json"
+        db_headers["Prefer"] = "return=minimal"
+        
         data = {
             "patient_id": payload.patient_id,
             "dr_name": payload.dr_name,
@@ -66,26 +88,23 @@ def build_router(state, workers):
             "diagnosis": payload.diagnosis,
             "confidence": payload.confidence,
             "timestamp": payload.timestamp,
-            "report_html_b64": payload.report_html_b64
+            # We save the PDF Link instead of the massive Base64 HTML string
+            "report_html_b64": public_pdf_url 
         }
         
         try:
-            response = requests.post(
-                SUPABASE_URL, 
-                json=data,
-                headers=headers,
-                timeout=10
-            )
+            db_res = requests.post(db_url, json=data, headers=db_headers, timeout=10)
             
-            if response.status_code in [200, 201]:
+            if db_res.status_code in [200, 201]:
                 return {"ok": True}
             else:
-                return {"ok": False, "error": f"Supabase returned {response.status_code}: {response.text}"}
+                return {"ok": False, "error": f"Database Insert Failed: {db_res.text}"}
         except Exception as e:
-            return {"ok": False, "error": f"Could not connect to Supabase: {str(e)}"}
+            return {"ok": False, "error": f"Database Connection Error: {str(e)}"}
 
     @router.post("/transform")
     def apply_transform(payload: TransformPayload):
+        # Update the transform dictionary in the central state, not on the worker thread
         t = state.transform[payload.eye]
         
         if payload.rotate:
@@ -163,13 +182,16 @@ def build_router(state, workers):
 
     @router.post("/save")
     def save_session():
+        # Hardcoded static paths to enforce dataset integrity
         base_dir = os.path.expanduser("~/Desktop/vision_capture_v1/03_TANGLAWAN_DATASET")
         left_dir = os.path.join(base_dir, "left")
         right_dir = os.path.join(base_dir, "right")
         
+        # Ensure target directories exist before writing
         os.makedirs(left_dir, exist_ok=True)
         os.makedirs(right_dir, exist_ok=True)
         
+        # Execute save command explicitly mapping to verified eye directories
         success = state.save(left_path=left_dir, right_path=right_dir)
         
         if success:

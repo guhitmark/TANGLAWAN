@@ -10,7 +10,7 @@ from .mode_manager import TrackerModeOverride
 
 # ── Fixed dataset root ────────────────────────────────────────────
 DATASET_ROOT = "/home/tanglawan/Desktop/vision_capture_v1/dataset"
-
+MAX_VALID_DROP = 0.5 # Maximum allowed mm drop per frame for biological velocity filter
 
 def _finalize_videos(temp_avi, final_avi, final_mp4, actual_fps, save_mp4):
     if not os.path.exists(temp_avi):
@@ -51,7 +51,6 @@ def export_graph_png(session_data_eye, export_path, title):
     fig, (ax_red, ax_blue) = plt.subplots(1, 2, figsize=(14, 5), dpi=120)
     fig.suptitle(title, fontsize=13, fontweight="bold")
 
-    # UPDATED TIMELINE FOR THE 3-MINUTE PROTOCOL (120s to 180s)
     for ax, xlim, label, color in [
         (ax_red,  (0,   60),  "Red Stimulus PLR",  "#dc2626"),
         (ax_blue, (120, 180), "Blue Stimulus PLR", "#2563eb"),
@@ -67,7 +66,6 @@ def export_graph_png(session_data_eye, export_path, title):
     t_r_line, y_r_line, t_r_drop = [], [], []
     t_b_line, y_b_line, t_b_drop = [], [], []
     
-    # --- FORWARD FILL VARIABLES ---
     last_valid_red = np.nan
     last_valid_blue = np.nan
     
@@ -82,6 +80,10 @@ def export_graph_png(session_data_eye, export_path, title):
         is_good = valid and not np.isnan(y) and y > 0
         
         if t <= 60:
+            if is_good and not np.isnan(last_valid_red):
+                if (last_valid_red - y) > MAX_VALID_DROP:
+                    is_good = False # Velocity filter caught an eyelash/eyelid artifact
+                    
             if is_good:
                 last_valid_red = y
             else:
@@ -91,8 +93,11 @@ def export_graph_png(session_data_eye, export_path, title):
                 t_r_line.append(t)
                 y_r_line.append(last_valid_red)
                 
-        # UPDATED TIMELINE FOR THE 3-MINUTE PROTOCOL (120s to 180s)
         elif 120 <= t <= 180:
+            if is_good and not np.isnan(last_valid_blue):
+                if (last_valid_blue - y) > MAX_VALID_DROP:
+                    is_good = False # Velocity filter caught an eyelash/eyelid artifact
+                    
             if is_good:
                 last_valid_blue = y
             else:
@@ -125,7 +130,6 @@ def export_interactive_html(session_data_eye, export_path, title):
     t_r_line, y_r_line, t_r_drop = [], [], []
     t_b_line, y_b_line, t_b_drop = [], [], []
     
-    # --- FORWARD FILL VARIABLES ---
     last_valid_red = np.nan
     last_valid_blue = np.nan
     
@@ -139,6 +143,10 @@ def export_interactive_html(session_data_eye, export_path, title):
         is_good = valid and not np.isnan(y) and y > 0
         
         if t <= 60:
+            if is_good and not np.isnan(last_valid_red):
+                if (last_valid_red - y) > MAX_VALID_DROP:
+                    is_good = False # Velocity filter caught an eyelash/eyelid artifact
+                    
             if is_good:
                 last_valid_red = y
             else:
@@ -148,8 +156,11 @@ def export_interactive_html(session_data_eye, export_path, title):
                 t_r_line.append(t)
                 y_r_line.append(last_valid_red)
                 
-        # UPDATED TIMELINE FOR THE 3-MINUTE PROTOCOL (120s to 180s)
         elif 120 <= t <= 180:
+            if is_good and not np.isnan(last_valid_blue):
+                if (last_valid_blue - y) > MAX_VALID_DROP:
+                    is_good = False # Velocity filter caught an eyelash/eyelid artifact
+                    
             if is_good:
                 last_valid_blue = y
             else:
@@ -178,7 +189,6 @@ def export_interactive_html(session_data_eye, export_path, title):
         xaxis_title="Time (s)", yaxis_title="Pupil Diameter (mm)",
         template="plotly_dark", hovermode="x unified", dragmode="zoom",
         yaxis=dict(range=[1.0, 9.0]),
-        # UPDATED: Changed the X-axis limit to 180s
         xaxis=dict(range=[0, 180], rangeslider=dict(visible=True, thickness=0.08)),
     )
     fig.write_html(export_path, config={"scrollZoom": True, "displayModeBar": True})
@@ -194,7 +204,6 @@ def export_excel_report(session_data_eye, export_path, r_met, b_met):
     df["y"] = pd.to_numeric(df["y"], errors="coerce")
     
     df["Red Stimulus (mm)"]  = np.where(df["t"] <= 60, df["y"], np.nan)
-    # UPDATED TIMELINE FOR THE 3-MINUTE PROTOCOL (120s to 180s)
     df["Blue Stimulus (mm)"] = np.where((df["t"] >= 120) & (df["t"] <= 180), df["y"], np.nan)
     df.rename(columns={"t": "Time (s)", "y": "Raw Diameter (mm)", "valid": "Valid Track"},
               inplace=True)
@@ -241,17 +250,13 @@ def export_metadata_json(state, export_path, eye_label, r_met, b_met):
 def export_all(state):
     """Full save: videos, PNG, HTML, XLSX, CSV, JSON metadata."""
     
-    # ── MASTER OVERRIDE INTERCEPT ──
-    # If Tracker Mode is active, bypass clinical processing and finalize immediately.
     if TrackerModeOverride.is_active(state):
         res = TrackerModeOverride.finalize_dataset(state)
         if res.get("ok"):
-            # FIX: Manually clean up the session state since we are bypassing the standard cleanup block below
             with state.lock:
                 state.has_staged_data = False
                 state.staged_left = False
                 state.staged_right = False
-                # Unlink final paths so they cannot be accidentally deleted later
                 state.stage_path_L = os.path.join(state.root_dir, ".temp_stage_L.avi")
                 state.stage_path_R = os.path.join(state.root_dir, ".temp_stage_R.avi")
         return res
@@ -275,8 +280,6 @@ def export_all(state):
     export_status = []
 
     elapsed_s  = state.elapsed()
-    # UPDATED: Corrected the video length calculation for the 3-minute test.
-    # We record exactly 60 seconds (Red phase) + the recorded portion of the Blue phase (120s to 180s).
     recorded_s = min(60, elapsed_s) + max(0, min(60, elapsed_s - 120))
     recorded_s = max(1.0, recorded_s)
 
