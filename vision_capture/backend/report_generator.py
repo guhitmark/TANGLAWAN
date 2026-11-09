@@ -111,168 +111,160 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
     p_bp = patient_details.get("bp", "") or "Not Recorded"
     
     # -------------------------------------------------------------
-    # PART 1: GENERATE THE VISUAL HTML
+    # HTML TEMPLATE WITH BROWSER-SIDE html2pdf.js INTEGRATION
     # -------------------------------------------------------------
-    html_top = f"""
+    html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <title>TANGLAWAN Diagnostic Report - {patient_id}</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
         <style>
-            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #333; max-width: 900px; margin: 0 auto; }}
+            body {{ 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                background-color: #f8fafc; 
+                padding: 20px; 
+                margin: 0; 
+            }}
+            
+            /* Strict box sizing to define exact PDF dimensions */
+            #pdf-content {{
+                background-color: #ffffff;
+                width: 100%;
+                max-width: 850px;
+                margin: 0 auto;
+                padding: 40px;
+                box-sizing: border-box;
+                border-radius: 8px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            }}
+
             .header {{ border-bottom: 3px solid #00d2ff; padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }}
-            .header h1 {{ color: #046b88; margin: 0; }}
-            .timestamp {{ color: #64748b; font-size: 0.9rem; font-weight: bold; }}
+            .header h1 {{ color: #046b88; margin: 0; font-size: 1.6rem; }}
+            .timestamp {{ color: #64748b; font-size: 0.85rem; font-weight: bold; }}
             
             .grid-container {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }}
             .info-box {{ background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }}
-            .info-box h3 {{ margin-top: 0; color: #0f172a; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px; font-size: 1rem; text-transform: uppercase; }}
-            .info-table {{ width: 100%; text-align: left; font-size: 0.9rem; border-collapse: collapse; }}
+            .info-box h3 {{ margin-top: 0; color: #0f172a; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px; font-size: 0.95rem; text-transform: uppercase; }}
+            .info-table {{ width: 100%; text-align: left; font-size: 0.85rem; border-collapse: collapse; }}
             .info-table th {{ width: 120px; color: #64748b; font-weight: normal; padding: 4px 0; vertical-align: top; }}
             .info-table td {{ font-weight: 500; padding: 4px 0; }}
             
-            .result-box {{ background: #eff6ff; padding: 20px; border-radius: 8px; border-left: 5px solid #3b82f6; margin-bottom: 20px; text-align: center; }}
-            .result-title {{ font-size: 1rem; font-weight: bold; color: #1e3a8a; margin-bottom: 5px; text-transform: uppercase; }}
-            .result-value {{ font-size: 2.2rem; font-weight: bold; color: #1d4ed8; letter-spacing: 1px; }}
+            .result-box {{ background: #eff6ff; padding: 15px; border-radius: 8px; border-left: 5px solid #3b82f6; margin-bottom: 20px; text-align: center; }}
+            .result-title {{ font-size: 0.95rem; font-weight: bold; color: #1e3a8a; margin-bottom: 5px; text-transform: uppercase; }}
+            .result-value {{ font-size: 2rem; font-weight: bold; color: #1d4ed8; letter-spacing: 1px; }}
             
-            .graph-box {{ text-align: center; margin-top: 20px; }}
+            .graph-box {{ text-align: center; margin-top: 15px; }}
+            .graph-box img {{ max-width: 100% !important; height: auto !important; border: 1px solid #cbd5e1; border-radius: 4px; }}
             
-            .action-container {{ text-align: center; margin-top: 35px; border-top: 2px dashed #cbd5e1; padding-top: 25px; }}
+            .action-container {{ text-align: center; margin-top: 35px; padding-top: 25px; }}
             .btn {{ display: inline-block; padding: 12px 24px; font-size: 1rem; font-weight: bold; border-radius: 6px; cursor: pointer; border: none; margin: 0 10px; transition: 0.2s; }}
             .btn-print {{ background-color: #475569; color: #fff; }}
             .btn-print:hover {{ background-color: #334155; }}
-            .btn-upload {{ background-color: #0ea5e9; color: #fff; }}
-            .btn-upload:hover {{ background-color: #0284c7; }}
+            .btn-upload {{ background-color: #16a34a; color: #fff; }}
+            .btn-upload:hover {{ background-color: #15803d; }}
             
             .footer {{ margin-top: 25px; font-size: 0.85rem; color: #94a3b8; text-align: center; }}
             
             @media print {{
-                .action-container .btn {{ display: none !important; }}
-                body {{ padding: 0; max-width: 100%; }}
-                .graph-box img {{ max-width: 100%; height: auto; }}
+                .action-container {{ display: none !important; }}
+                body {{ padding: 0; background-color: #fff; }}
+                #pdf-content {{ box-shadow: none; padding: 0; }}
             }}
         </style>
     </head>
     <body>
-        <div class="header">
-            <div>
-                <h1>TANGLAWAN Pupillometry System</h1>
-                <p style="margin: 5px 0 0 0; color: #475569;">Automated Clinical AI Diagnostic Report</p>
-            </div>
-            <div class="timestamp">Tested: {timestamp}</div>
-        </div>
         
-        <div class="grid-container">
-            <div class="info-box">
-                <h3>Physician Information</h3>
-                <table class="info-table">
-                    <tr><th>Ophthalmologist:</th><td>Dr. {dr_name}</td></tr>
-                    <tr><th>License No:</th><td>{dr_license}</td></tr>
-                    <tr><th>Device Node:</th><td>Jetson Nano Edge AI</td></tr>
+        <!-- Printable Wrapper Container -->
+        <div id="pdf-content">
+            <div class="header">
+                <div>
+                    <h1>TANGLAWAN Pupillometry System</h1>
+                    <p style="margin: 5px 0 0 0; color: #475569;">Automated Clinical AI Diagnostic Report</p>
+                </div>
+                <div class="timestamp">Tested: {timestamp}</div>
+            </div>
+            
+            <div class="grid-container">
+                <div class="info-box">
+                    <h3>Physician Information</h3>
+                    <table class="info-table">
+                        <tr><th>Ophthalmologist:</th><td>Dr. {dr_name}</td></tr>
+                        <tr><th>License No:</th><td>{dr_license}</td></tr>
+                        <tr><th>Device Node:</th><td>Jetson Nano Edge AI</td></tr>
+                    </table>
+                </div>
+                
+                <div class="info-box">
+                    <h3>Patient Information</h3>
+                    <table class="info-table">
+                        <tr><th>Patient ID:</th><td><b>{patient_id}</b></td></tr>
+                        <tr><th>Full Name:</th><td>{p_name}</td></tr>
+                        <tr><th>Date of Birth:</th><td>{p_dob}</td></tr>
+                        <tr><th>Sex:</th><td>{p_sex}</td></tr>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="info-box" style="margin-bottom: 20px;">
+                <h3>Clinical Metrics</h3>
+                <table class="info-table" style="display: grid; grid-template-columns: 1fr 1fr;">
+                    <tbody>
+                        <tr><th>General Status:</th><td>{p_status}</td></tr>
+                        <tr><th>HbA1c Level:</th><td>{p_hba1c}</td></tr>
+                        <tr><th>Blood Pressure:</th><td>{p_bp}</td></tr>
+                    </tbody>
                 </table>
             </div>
             
-            <div class="info-box">
-                <h3>Patient Information</h3>
-                <table class="info-table">
-                    <tr><th>Patient ID:</th><td><b>{patient_id}</b></td></tr>
-                    <tr><th>Full Name:</th><td>{p_name}</td></tr>
-                    <tr><th>Date of Birth:</th><td>{p_dob}</td></tr>
-                    <tr><th>Sex:</th><td>{p_sex}</td></tr>
-                </table>
+            <div class="result-box">
+                <div class="result-title">1D-CNN Inference Result</div>
+                <div class="result-value">{prediction}</div>
+                <div style="margin-top: 10px; color: #475569; font-size: 1.1rem;">Diagnostic Confidence: <b style="color: #0f172a;">{confidence}%</b></div>
             </div>
-        </div>
-        
-        <div class="info-box" style="margin-bottom: 20px;">
-            <h3>Clinical Metrics</h3>
-            <table class="info-table" style="display: grid; grid-template-columns: 1fr 1fr;">
-                <tbody>
-                    <tr><th>General Status:</th><td>{p_status}</td></tr>
-                    <tr><th>HbA1c Level:</th><td>{p_hba1c}</td></tr>
-                    <tr><th>Blood Pressure:</th><td>{p_bp}</td></tr>
-                </tbody>
-            </table>
-        </div>
-        
-        <div class="result-box">
-            <div class="result-title">1D-CNN Inference Result</div>
-            <div class="result-value">{prediction}</div>
-            <div style="margin-top: 10px; color: #475569; font-size: 1.1rem;">Diagnostic Confidence: <b style="color: #0f172a;">{confidence}%</b></div>
-        </div>
-        
-        <div class="graph-box">
-            <img src="data:image/png;base64,{img_b64}" style="max-width: 100%; border: 1px solid #cbd5e1; border-radius: 4px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+            
+            <div class="graph-box">
+                <img src="data:image/png;base64,{img_b64}">
+            </div>
         </div>
         
         <div class="action-container">
             <button class="btn btn-print" onclick="window.print()">🖨 Print to PDF</button>
-            <button class="btn btn-upload" onclick="uploadData()">☁️ Upload to Supabase</button>
+            <button class="btn btn-upload" onclick="uploadData()">☁️ Auto-Upload to Supabase</button>
             
             <div class="footer">
                 This report was generated automatically by the TANGLAWAN Edge Inference pipeline. <br>
                 <i>Designed for research and screening purposes. Not a definitive medical diagnosis.</i>
             </div>
         </div>
-    """
-
-    html_bottom_for_pdf = """
-    </body>
-    </html>
-    """
         
-    # -------------------------------------------------------------
-    # PART 2: GENERATE THE PDF
-    # -------------------------------------------------------------
-    options = {
-        'page-width': '8.5in',
-        'page-height': '13in',
-        'margin-top': '0.75in',
-        'margin-right': '0.75in',
-        'margin-bottom': '0.75in',
-        'margin-left': '0.75in',
-        'encoding': "UTF-8",
-        'enable-local-file-access': None,
-        'no-outline': None
-    }
-    try:
-        pdfkit.from_string(html_top + html_bottom_for_pdf, pdf_path, options=options)
-    except Exception as e:
-        print(f"PDF Generation Error: {e}")
-        
-    # Read the physical PDF from disk and encode it to Base64
-    try:
-        with open(pdf_path, "rb") as pdf_file:
-            pdf_b64 = base64.b64encode(pdf_file.read()).decode('utf-8')
-    except Exception:
-        pdf_b64 = ""
-
-    # -------------------------------------------------------------
-    # PART 3: EMBED THE JAVASCRIPT & B64 PDF INTO THE HTML
-    # -------------------------------------------------------------
-    html_script = f"""
         <script>
             async function uploadData() {{
                 const btn = document.querySelector('.btn-upload');
-                btn.innerText = "☁️ UPLOADING PDF TO SUPABASE...";
+                btn.innerText = "☁️ GENERATING & UPLOADING PDF...";
                 btn.disabled = true;
 
                 try {{
                     const SUPABASE_KEY = "sb_publishable_mIHOi8dllJ0BSou4PY1CZA_XjXCaYgG";
+                    const pdfFilename = "{pdf_filename}";
                     
-                    // 1. Decode the Base64 String back into a physical PDF Blob
-                    const pdf_b64 = "{pdf_b64}";
-                    if (!pdf_b64) throw new Error("PDF data is empty. Generation may have failed.");
-                    
-                    const byteCharacters = atob(pdf_b64);
-                    const byteNumbers = new Array(byteCharacters.length);
-                    for (let i = 0; i < byteCharacters.length; i++) {{
-                        byteNumbers[i] = byteCharacters.charCodeAt(i);
-                    }}
-                    const byteArray = new Uint8Array(byteNumbers);
-                    const pdfBlob = new Blob([byteArray], {{type: 'application/pdf'}});
+                    const element = document.getElementById('pdf-content');
+                    const contentWidth = element.offsetWidth;
+                    const contentHeight = element.offsetHeight + 20; // 20px buffer to prevent clipping
 
-                    // 2. Upload the PDF Blob to Supabase Storage
-                    const STORAGE_URL = "https://zkmtfpeoihcxamtjatgh.supabase.co/storage/v1/object/tanglawan_pdfs/{pdf_filename}";
+                    const opt = {
+                        margin:       0,
+                        filename:     pdfFilename,
+                        image:        { type: 'jpeg', quality: 0.98 },
+                        html2canvas:  { scale: 2, useCORS: true, windowWidth: contentWidth },
+                        jsPDF:        { unit: 'px', format: [contentWidth, contentHeight], orientation: 'portrait' }
+                    };
+
+                    const pdfWorker = html2pdf().set(opt).from(element);
+                    const pdfPdf = await pdfWorker.outputPdf('blob');
+                    const pdfBlob = new Blob([pdfPdf], {{ type: 'application/pdf' }});
+
+                    const STORAGE_URL = `https://zkmtfpeoihcxamtjatgh.supabase.co/storage/v1/object/tanglawan_pdfs/${{pdfFilename}}`;
                     
                     const uploadRes = await fetch(STORAGE_URL, {{
                         method: 'POST',
@@ -287,16 +279,15 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
                     if (!uploadRes.ok) {{
                         const errText = await uploadRes.text();
                         if (!errText.includes("Duplicate")) {{
-                            alert("Storage Upload Failed: " + errText + "\\nDid you add an INSERT policy to the tanglawan_pdfs Storage Bucket?");
-                            btn.innerText = "☁️ Upload to Supabase";
+                            alert("Storage Upload Failed: " + errText);
+                            btn.innerText = "☁️ Auto-Upload to Supabase";
                             btn.disabled = false;
                             return;
                         }}
                     }}
 
-                    // 3. Insert the Record into the Supabase Database Table
                     const DB_URL = "https://zkmtfpeoihcxamtjatgh.supabase.co/rest/v1/tanglawan_reports";
-                    const public_pdf_url = "https://zkmtfpeoihcxamtjatgh.supabase.co/storage/v1/object/public/tanglawan_pdfs/{pdf_filename}";
+                    const publicPdfUrl = `https://zkmtfpeoihcxamtjatgh.supabase.co/storage/v1/object/public/tanglawan_pdfs/${{pdfFilename}}`;
                     
                     const payload = {{
                         patient_id: "{patient_id}",
@@ -305,7 +296,7 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
                         diagnosis: "{prediction}",
                         confidence: "{confidence}",
                         timestamp: "{file_time}",
-                        report_html_b64: public_pdf_url
+                        report_html_b64: publicPdfUrl
                     }};
 
                     const dbRes = await fetch(DB_URL, {{
@@ -325,12 +316,12 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
                     }} else {{
                         const dbErr = await dbRes.text();
                         alert("Database Sync Failed: " + dbErr);
-                        btn.innerText = "☁️ Upload to Supabase";
+                        btn.innerText = "☁️ Auto-Upload to Supabase";
                         btn.disabled = false;
                     }}
                 }} catch (error) {{
                     alert("Network Error: " + error);
-                    btn.innerText = "☁️ Upload to Supabase";
+                    btn.innerText = "☁️ Auto-Upload to Supabase";
                     btn.disabled = false;
                 }}
             }}
@@ -339,8 +330,23 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
     </html>
     """
     
-    # Write the Final Standalone HTML file to disk
     with open(report_path, "w") as f:
-        f.write(html_top + html_script)
+        f.write(html_content)
+        
+    options = {
+        'page-width': '8.5in',
+        'page-height': '13in',
+        'margin-top': '0.4in',
+        'margin-right': '0.4in',
+        'margin-bottom': '0.4in',
+        'margin-left': '0.4in',
+        'encoding': "UTF-8",
+        'enable-local-file-access': None,
+        'no-outline': None
+    }
+    try:
+        pdfkit.from_string(html_content, pdf_path, options=options)
+    except Exception as e:
+        print(f"PDF Generation Error: {e}")
         
     return report_path
