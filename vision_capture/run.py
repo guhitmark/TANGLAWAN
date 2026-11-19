@@ -32,12 +32,9 @@ def get_network_ip():
         s.close()
     return ip
 
-HOST_IP = get_network_ip()
 LOCAL_URL = "http://127.0.0.1:8000"
-NETWORK_URL = f"http://{HOST_IP}:8000"
 
 def _wait_for_server():
-    # Inform you so it doesn't look frozen!
     console_print("\n⏳ Booting AI Engine... (This takes 15-30 seconds, please wait)")
     
     deadline = time.time() + 120.0
@@ -47,7 +44,12 @@ def _wait_for_server():
             break
         except (urllib.error.URLError, OSError):
             time.sleep(0.5)
-    else:
+            
+    # Grab the IP after the server has had time to start and Wi-Fi to connect
+    HOST_IP = get_network_ip()
+    NETWORK_URL = f"http://{HOST_IP}:8000"
+    
+    if time.time() >= deadline:
         console_print("\n" + "=" * 60)
         console_print("⚠️ TANGLAWAN SERVER STARTED (Engine load timed out)")
         console_print(f"👉 CLICK HERE TO OPEN: {NETWORK_URL}")
@@ -62,7 +64,6 @@ def _wait_for_server():
 if __name__ == "__main__":
     threading.Thread(target=_wait_for_server, daemon=True).start()
 
-    # Uvicorn and FastAPI prints will be swallowed by the log file
     uvicorn.run(
         "backend.main:app",
         host="0.0.0.0",

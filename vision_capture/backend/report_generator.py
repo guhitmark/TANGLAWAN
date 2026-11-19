@@ -1,3 +1,5 @@
+"""report_generator.py"""
+
 import os
 import base64
 import io
@@ -8,6 +10,9 @@ from datetime import datetime
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+# Import your cleaning module
+from . import plr_stabilizer 
 
 def generate_diagnostic_report(state, patient_details, prediction, confidence):
     # Match the pathing logic exactly from exporters.py
@@ -31,48 +36,20 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
     # Generate Waveform Plot - Split into two subplots
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4), sharey=True, gridspec_kw={'width_ratios': [1, 1]})
     
-    MAX_VALID_DROP = 0.5 
-    
     for eye, color in [("L", "red"), ("R", "blue")]:
         data = state.session_data.get(eye, [])
-        if data:
-            t_red, y_red = [], []
-            t_blue, y_blue = [], []
+        if not data:
+            continue
             
-            last_valid_red = float('nan')
-            last_valid_blue = float('nan')
-            
-            for d in data:
-                t = d["t"]
-                y = d["y"]
-                is_valid = d["valid"] and y is not None and not math.isnan(y) and y > 1.0
-                
-                # Plot Red Phase
-                if t <= 60:
-                    if is_valid and not math.isnan(last_valid_red):
-                        if (last_valid_red - y) > MAX_VALID_DROP:
-                            is_valid = False 
-                    if is_valid:
-                        last_valid_red = y
-                    if not math.isnan(last_valid_red):
-                        t_red.append(t)
-                        y_red.append(last_valid_red)
-                        
-                # Plot Blue Phase (120s to 180s)
-                elif 120 <= t <= 180:
-                    if is_valid and not math.isnan(last_valid_blue):
-                        if (last_valid_blue - y) > MAX_VALID_DROP:
-                            is_valid = False 
-                    if is_valid:
-                        last_valid_blue = y
-                    if not math.isnan(last_valid_blue):
-                        t_blue.append(t)
-                        y_blue.append(last_valid_blue)
-                    
-            if t_red:
-                ax1.plot(t_red, y_red, label=f"{eye} Eye" if eye == "L" else "", color=color, linewidth=1.0)
-            if t_blue:
-                ax2.plot(t_blue, y_blue, label=f"{eye} Eye" if eye == "R" else "", color=color, linewidth=1.0)
+        series = plr_stabilizer.plot_series(plr_stabilizer.stabilize_session(data))
+        for ax, key in [(ax1, "red"), (ax2, "blue")]:
+            q = series[key]
+            ax.plot(q["t"], q["measured"], label=f"{eye} Eye" if key == "red" else "_nolegend_",
+                    color=color, linewidth=1.0)
+            ax.plot(q["t"], q["held"], color=color, linewidth=1.0, linestyle="--")
+            # Sparse markers identify held samples without dropping them to a fixed diameter.
+            if len(q["held_t"]):
+                ax.scatter(q["held_t"], q["held_y"], color="#f59e0b", marker="x", s=5, alpha=0.5)
 
     # Format Left Subplot (Red Phase)
     ax1.set_title("Red Stimulus (0-60s)")
@@ -89,10 +66,13 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
     ax2.grid(True, linestyle='--', alpha=0.6)
     
     fig.suptitle("Pupillary Light Reflex (PLR) Waveform", fontsize=14, fontweight='bold')
-    fig.legend(loc="upper right", bbox_to_anchor=(0.98, 0.95))
+    handles, labels = ax1.get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc="upper right", bbox_to_anchor=(0.98, 0.95))
     
     plt.tight_layout()
-    fig.subplots_adjust(top=0.82) 
+    fig.subplots_adjust(top=0.82, bottom=0.19)
+    fig.text(0.5, 0.035, "Dashed / orange: last valid value held; not a measured pupil diameter.", ha="center", fontsize=8) 
     
     buf = io.BytesIO()
     plt.savefig(buf, format='png', dpi=150)
@@ -110,9 +90,7 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
     p_hba1c = patient_details.get("hba1c", "") or "Not Tested"
     p_bp = patient_details.get("bp", "") or "Not Recorded"
     
-    # -------------------------------------------------------------
     # HTML TEMPLATE WITH BROWSER-SIDE html2pdf.js INTEGRATION
-    # -------------------------------------------------------------
     html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -127,7 +105,6 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
                 margin: 0; 
             }}
             
-            /* Strict box sizing to define exact PDF dimensions */
             #pdf-content {{
                 background-color: #ffffff;
                 width: 100%;
@@ -250,15 +227,15 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
                     
                     const element = document.getElementById('pdf-content');
                     const contentWidth = element.offsetWidth;
-                    const contentHeight = element.offsetHeight + 20; // 20px buffer to prevent clipping
+                    const contentHeight = element.offsetHeight + 20;
 
-                    const opt = {
-                        margin:       0,
+                    const opt = {{
+                        margin:       1,
                         filename:     pdfFilename,
-                        image:        { type: 'jpeg', quality: 0.98 },
-                        html2canvas:  { scale: 2, useCORS: true, windowWidth: contentWidth },
-                        jsPDF:        { unit: 'px', format: [contentWidth, contentHeight], orientation: 'portrait' }
-                    };
+                        image:        {{ type: 'jpeg', quality: 0.98 }},
+                        html2canvas:  {{ scale: 2, useCORS: true, windowWidth: contentWidth }},
+                        jsPDF:        {{ unit: 'px', format: [contentWidth, contentHeight], orientation: 'portrait' }}
+                    }};
 
                     const pdfWorker = html2pdf().set(opt).from(element);
                     const pdfPdf = await pdfWorker.outputPdf('blob');

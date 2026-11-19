@@ -237,7 +237,7 @@ function viewDiagnosticReport() {
 }
 
 function submitInferenceSave() {
-    const reqFields = ['dr-name', 'dr-license', 'patient-name', 'patient-dob', 'patient-sex'];
+    const reqFields = ['patient-name', 'patient-dob', 'patient-sex'];
     let valid = true;
     
     reqFields.forEach(id => {
@@ -262,7 +262,7 @@ function executeFinalSave() {
     let detailsPayload = {};
 
     if (diagnosisType === "UNKNOWN") {
-        const reqFields = ['dr-name', 'dr-license', 'patient-name', 'patient-dob', 'patient-sex'];
+        const reqFields = ['patient-name', 'patient-dob', 'patient-sex'];
         let valid = true;
         reqFields.forEach(id => { if(!document.getElementById(id).value) valid = false; });
 
@@ -475,11 +475,6 @@ document.getElementById("diagnosis").addEventListener("change", (e) => {
         if (btnMain) btnMain.innerHTML = "<span>[V]</span>SAVE";
         if (btnPopup) btnPopup.innerText = "SAVE DATA";
     }
-});
-
-document.getElementById("chk-mp4").addEventListener("change", (e) => {
-    fetch(`${API}/save_mp4`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ save_mp4: e.target.checked }) });
-    e.target.blur(); 
 });
 
 function syncHardware() { 

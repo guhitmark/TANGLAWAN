@@ -1,3 +1,5 @@
+"""exporters.py"""
+
 import os
 import json
 from datetime import datetime
@@ -10,9 +12,9 @@ from .mode_manager import TrackerModeOverride
 
 # ── Fixed dataset root ────────────────────────────────────────────
 DATASET_ROOT = "/home/tanglawan/Desktop/vision_capture_v1/dataset"
-MAX_VALID_DROP = 0.5 # Maximum allowed mm drop per frame for biological velocity filter
+from . import plr_stabilizer
 
-def _finalize_videos(temp_avi, final_avi, final_mp4, actual_fps, save_mp4):
+def _finalize_videos(temp_avi, final_avi, actual_fps):
     if not os.path.exists(temp_avi):
         return
     cap = cv2.VideoCapture(temp_avi)
@@ -20,20 +22,15 @@ def _finalize_videos(temp_avi, final_avi, final_mp4, actual_fps, save_mp4):
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     out_avi = cv2.VideoWriter(final_avi, cv2.VideoWriter_fourcc(*"MJPG"), actual_fps, (w, h))
-    out_mp4 = None
-    if save_mp4:
-        out_mp4 = cv2.VideoWriter(final_mp4, cv2.VideoWriter_fourcc(*"mp4v"), actual_fps, (w, h))
 
     try:
         while True:
             ret, frame = cap.read()
             if not ret: break
             out_avi.write(frame)
-            if out_mp4: out_mp4.write(frame)
     finally:
         cap.release()
         out_avi.release()
-        if out_mp4: out_mp4.release()
         
         if os.path.exists(temp_avi):
             try: os.remove(temp_avi)
@@ -63,55 +60,17 @@ def export_graph_png(session_data_eye, export_path, title):
         ax.grid(True, linestyle="--", alpha=0.5)
         ax.tick_params(labelsize=8)
 
-    t_r_line, y_r_line, t_r_drop = [], [], []
-    t_b_line, y_b_line, t_b_drop = [], [], []
-    
-    last_valid_red = np.nan
-    last_valid_blue = np.nan
-    
-    for r in session_data_eye:
-        t, valid = r["t"], r["valid"]
-        
-        try:
-            y = float(r["y"]) if r["y"] is not None else np.nan
-        except (TypeError, ValueError, KeyError):
-            y = np.nan
-            
-        is_good = valid and not np.isnan(y) and y > 0
-        
-        if t <= 60:
-            if is_good and not np.isnan(last_valid_red):
-                if (last_valid_red - y) > MAX_VALID_DROP:
-                    is_good = False # Velocity filter caught an eyelash/eyelid artifact
-                    
-            if is_good:
-                last_valid_red = y
-            else:
-                t_r_drop.append(t)
-            
-            if not np.isnan(last_valid_red):
-                t_r_line.append(t)
-                y_r_line.append(last_valid_red)
-                
-        elif 120 <= t <= 180:
-            if is_good and not np.isnan(last_valid_blue):
-                if (last_valid_blue - y) > MAX_VALID_DROP:
-                    is_good = False # Velocity filter caught an eyelash/eyelid artifact
-                    
-            if is_good:
-                last_valid_blue = y
-            else:
-                t_b_drop.append(t)
-                
-            if not np.isnan(last_valid_blue):
-                t_b_line.append(t)
-                y_b_line.append(last_valid_blue)
-
-    if t_r_line: ax_red.plot(t_r_line, y_r_line, color="#dc2626", lw=1.5, label="Valid Track")
-    if t_b_line: ax_blue.plot(t_b_line, y_b_line, color="#2563eb", lw=1.5, label="Valid Track")
-
-    if t_r_drop: ax_red.scatter(t_r_drop, [2.0]*len(t_r_drop), color="#f59e0b", marker="x", s=30, lw=1.5, label="Tracking Lost", zorder=5)
-    if t_b_drop: ax_blue.scatter(t_b_drop, [2.0]*len(t_b_drop), color="#f59e0b", marker="x", s=30, lw=1.5, label="Tracking Lost", zorder=5)
+    series = plr_stabilizer.plot_series(plr_stabilizer.stabilize_session(session_data_eye))
+    for ax, key, color in [(ax_red, "red", "#dc2626"), (ax_blue, "blue", "#2563eb")]:
+        q = series[key]
+        ax.plot(q["t"], q["measured"], color=color, lw=1.5, label="Filtered measurement")
+        ax.plot(q["t"], q["held"], color=color, lw=1.3, ls="--", label="Last valid value (held)")
+        if len(q["held_t"]):
+            ax.scatter(q["held_t"], q["held_y"], color="#f59e0b", marker="x", s=10,
+                       alpha=0.65, label="Lost / artifact", zorder=5)
+        if len(q["missing_t"]):
+            ax.plot(q["missing_t"], np.full(len(q["missing_t"]), 0.025), "|", color="#f59e0b",
+                    transform=ax.get_xaxis_transform(), label="No previous measurement")
 
     for ax in (ax_red, ax_blue):
         ax.legend(loc="upper right", fontsize=8)
@@ -127,62 +86,17 @@ def export_interactive_html(session_data_eye, export_path, title):
     if not session_data_eye:
         raise ValueError("No telemetry data to plot.")
 
-    t_r_line, y_r_line, t_r_drop = [], [], []
-    t_b_line, y_b_line, t_b_drop = [], [], []
-    
-    last_valid_red = np.nan
-    last_valid_blue = np.nan
-    
-    for r in session_data_eye:
-        t, valid = r["t"], r["valid"]
-        try:
-            y = float(r["y"]) if r["y"] is not None else np.nan
-        except (TypeError, ValueError, KeyError):
-            y = np.nan
-            
-        is_good = valid and not np.isnan(y) and y > 0
-        
-        if t <= 60:
-            if is_good and not np.isnan(last_valid_red):
-                if (last_valid_red - y) > MAX_VALID_DROP:
-                    is_good = False # Velocity filter caught an eyelash/eyelid artifact
-                    
-            if is_good:
-                last_valid_red = y
-            else:
-                t_r_drop.append(t)
-                
-            if not np.isnan(last_valid_red):
-                t_r_line.append(t)
-                y_r_line.append(last_valid_red)
-                
-        elif 120 <= t <= 180:
-            if is_good and not np.isnan(last_valid_blue):
-                if (last_valid_blue - y) > MAX_VALID_DROP:
-                    is_good = False # Velocity filter caught an eyelash/eyelid artifact
-                    
-            if is_good:
-                last_valid_blue = y
-            else:
-                t_b_drop.append(t)
-                
-            if not np.isnan(last_valid_blue):
-                t_b_line.append(t)
-                y_b_line.append(last_valid_blue)
-
+    series = plr_stabilizer.plot_series(plr_stabilizer.stabilize_session(session_data_eye))
     fig = go.Figure()
-    
-    if t_r_line: fig.add_trace(go.Scatter(x=t_r_line, y=y_r_line, mode="lines",
-        name="Red Stimulus", line=dict(color="#dc2626", width=2)))
-        
-    if t_b_line: fig.add_trace(go.Scatter(x=t_b_line, y=y_b_line, mode="lines",
-        name="Blue Stimulus", line=dict(color="#2563eb", width=2)))
-        
-    if t_r_drop: fig.add_trace(go.Scatter(x=t_r_drop, y=[2.0]*len(t_r_drop), mode="markers",
-        name="Red Tracking Lost", marker=dict(color="#f59e0b", symbol="x", size=6)))
-        
-    if t_b_drop: fig.add_trace(go.Scatter(x=t_b_drop, y=[2.0]*len(t_b_drop), mode="markers",
-        name="Blue Tracking Lost", marker=dict(color="#f59e0b", symbol="x", size=6)))
+    for key, name, color in [("red", "Red", "#dc2626"), ("blue", "Blue", "#2563eb")]:
+        q = series[key]
+        fig.add_trace(go.Scatter(x=q["t"], y=q["measured"], mode="lines", connectgaps=False,
+                     name=name + " filtered", line=dict(color=color, width=2)))
+        fig.add_trace(go.Scatter(x=q["t"], y=q["held"], mode="lines", connectgaps=False,
+                     name=name + " held (not measured)", line=dict(color=color, width=2, dash="dash")))
+        if len(q["held_t"]):
+            fig.add_trace(go.Scatter(x=q["held_t"], y=q["held_y"], mode="markers",
+                         name=name + " lost / artifact", marker=dict(color="#f59e0b", symbol="x", size=5)))
 
     fig.update_layout(
         title=f"Interactive PLR — {title}",
@@ -193,36 +107,6 @@ def export_interactive_html(session_data_eye, export_path, title):
     )
     fig.write_html(export_path, config={"scrollZoom": True, "displayModeBar": True})
 
-
-def export_excel_report(session_data_eye, export_path, r_met, b_met):
-    import pandas as pd
-
-    if not session_data_eye:
-        raise ValueError("No telemetry data to export.")
-
-    df = pd.DataFrame(session_data_eye)
-    df["y"] = pd.to_numeric(df["y"], errors="coerce")
-    
-    df["Red Stimulus (mm)"]  = np.where(df["t"] <= 60, df["y"], np.nan)
-    df["Blue Stimulus (mm)"] = np.where((df["t"] >= 120) & (df["t"] <= 180), df["y"], np.nan)
-    df.rename(columns={"t": "Time (s)", "y": "Raw Diameter (mm)", "valid": "Valid Track"},
-              inplace=True)
-
-    PARAM_LABELS = [
-        "Baseline Diam. [D_base]", "Minimum Diam. [D_min]",
-        "Constriction Amplitude",  "Constriction Latency (ms)",
-        "Max Constrict. Velocity", "Avg Constrict. Velocity",
-        "PIPR (mm)", "Max Redilation Velocity", "75% Recovery Time (ms)",
-    ]
-    df_params = pd.DataFrame({
-        "Clinical Parameter": PARAM_LABELS,
-        "Red Stimulus":  list(r_met),
-        "Blue Stimulus": list(b_met),
-    })
-
-    with pd.ExcelWriter(export_path, engine="openpyxl") as writer:
-        df.to_excel(writer, sheet_name="Raw Data", index=False)
-        df_params.to_excel(writer, sheet_name="Clinical Parameters", index=False)
 
 
 def export_metadata_json(state, export_path, eye_label, r_met, b_met):
@@ -237,7 +121,8 @@ def export_metadata_json(state, export_path, eye_label, r_met, b_met):
         "timestamp_iso":  datetime.now().isoformat(),
         "left_enabled":   state.left_enabled,
         "right_enabled":  state.right_enabled,
-        "save_mp4":       state.save_mp4,
+        "save_mp4":       False,
+        "clinical_metrics_source": "Existing metrics engine; not recomputed from display holds",
         "clinical_metrics": {
             "red_stimulus":  dict(zip(PARAM_LABELS, r_met)),
             "blue_stimulus": dict(zip(PARAM_LABELS, b_met)),
@@ -248,7 +133,9 @@ def export_metadata_json(state, export_path, eye_label, r_met, b_met):
 
 
 def export_all(state):
-    """Full save: videos, PNG, HTML, XLSX, CSV, JSON metadata."""
+    """Full save: AVI, PNG, HTML, CSV and JSON metadata."""
+    # Keep the backend flag disabled even if an older UI enabled MP4.
+    state.save_mp4 = False
     
     if TrackerModeOverride.is_active(state):
         res = TrackerModeOverride.finalize_dataset(state)
@@ -291,8 +178,7 @@ def export_all(state):
 
         _finalize_videos(stage_path,
                          os.path.join(d_dir, f"{prefix}.avi"),
-                         os.path.join(d_dir, f"{prefix}.mp4"),
-                         fps, state.save_mp4)
+                         fps)
         export_status.append(f"{eye} Video")
 
         try:
@@ -320,16 +206,6 @@ def export_all(state):
             export_status.append(f"{eye} HTML Plot")
         except Exception as e:
             err_msg = f"{eye} HTML FAILED: {e}"
-            print(f"\n[EXPORTER ERROR] {err_msg}")
-            export_status.append(err_msg)
-
-        try:
-            export_excel_report(session_data,
-                                os.path.join(d_dir, f"{prefix}.xlsx"),
-                                r_met, b_met)
-            export_status.append(f"{eye} Excel")
-        except Exception as e:
-            err_msg = f"{eye} Excel FAILED: {e}"
             print(f"\n[EXPORTER ERROR] {err_msg}")
             export_status.append(err_msg)
 
@@ -362,6 +238,22 @@ def export_all(state):
             diagnosis_label=extracted_label,
         )
         export_status.append("CSV Telemetry")
+        # Add derived fields only; never overwrite the original diameter or valid columns.
+        for enabled, eye_dir, suffix in [(state.staged_left, left_dir, "LE"),
+                                         (state.staged_right, right_dir, "RE")]:
+            if not enabled:
+                continue
+            candidates = [os.path.join(eye_dir, f"{date_str}-{pid}-{suffix}_pupil.csv"),
+                          os.path.join(eye_dir, f"{pid}-{date_str}-{suffix}_pupil.csv")]
+            found = [path for path in candidates if os.path.isfile(path)]
+            if len(found) != 1:
+                export_status.append(f"{suffix} stabilizer skipped: expected exactly one pupil CSV")
+                continue
+            try:
+                plr_stabilizer.add_filtered_csv(found[0])
+                export_status.append(f"{suffix} filtered CSV columns")
+            except Exception as e:
+                export_status.append(f"{suffix} stabilizer FAILED: {e}")
     except Exception as e:
         err_msg = f"CSV FAILED: {e}"
         print(f"\n[EXPORTER ERROR] {err_msg}")
