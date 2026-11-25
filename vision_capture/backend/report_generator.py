@@ -4,6 +4,8 @@ import os
 import base64
 import io
 import math
+import html
+import json
 import pdfkit
 from datetime import datetime
 
@@ -14,13 +16,37 @@ import matplotlib.pyplot as plt
 # Import your cleaning module
 from . import plr_stabilizer 
 
-def generate_diagnostic_report(state, patient_details, prediction, confidence):
+def generate_diagnostic_report(state, patient_details, prediction, confidence, model_result=None):
+    """Report after verified V4 inference. Existing 4-positional-arg calls still work."""
+    model_result = model_result or {}
+    if model_result and not model_result.get('ok', False):
+        raise ValueError('Refusing to produce a classification report for failed inference')
+    def esc(x):
+        return html.escape(str(x), quote=True)
+    score_rows = []
+    for code, display in [('LBL_0','Healthy'), ('LBL_1','Diabetic-DR'), ('LBL_2','Diabetic-NoDR')]:
+        p = model_result.get('scores_by_label', {}).get(code)
+        if p is not None:
+            score_rows.append('<tr><th>%s:</th><td>%.2f%%</td></tr>' % (esc(display), 100.0 * float(p)))
+    score_table = '<table class="info-table">%s</table>' % ''.join(score_rows) if score_rows else ''
+    quality = model_result.get('quality', {})
+    quality_rows = ''.join('<tr><th>%s:</th><td>%.1f%%</td></tr>' %
+        (esc(k.replace('_', ' ')), 100.0*float(v)) for k,v in quality.items() if isinstance(v,(int,float)) and math.isfinite(v))
+    quality_table = '<table class="info-table">%s</table>' % quality_rows if quality_rows else ''
+    warning = esc(model_result.get('warning', 'Model output is an automated estimate, not a definitive medical diagnosis.'))
+    version = esc(model_result.get('model_version', 'Unknown model version'))
+    training_mode = str(model_result.get('training_data_mode') or 'not specified').strip()
+    training_label = esc({'synthetic':'Synthetic training data', 'clinical':'Clinical training data', 'real':'Recorded participant data'}.get(training_mode.lower(), training_mode))
+    validation_note = ('Research model; not clinically validated for diagnosis.'
+                       if model_result.get('research_only', True) else
+                       'Refer to the current model validation documentation before clinical interpretation.')
+
     # Match the pathing logic exactly from exporters.py
     date_str = datetime.now().strftime("%m%d%Y") 
     patient_id = state.patient_id if state.patient_id else "UNKNOWN"
     trial_folder = f"{patient_id}_{date_str}"
     
-    dataset_root = "/home/tanglawan/Desktop/vision_capture_v1/dataset"
+    dataset_root = os.environ.get('TANGLAWAN_DATASET_ROOT', '/home/tanglawan/Desktop/vision_capture_v1/dataset')
     reports_dir = os.path.join(dataset_root, "UNKNOWN", trial_folder)
     os.makedirs(reports_dir, exist_ok=True)
     
@@ -44,24 +70,26 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
         series = plr_stabilizer.plot_series(plr_stabilizer.stabilize_session(data))
         for ax, key in [(ax1, "red"), (ax2, "blue")]:
             q = series[key]
-            ax.plot(q["t"], q["measured"], label=f"{eye} Eye" if key == "red" else "_nolegend_",
+            ax.plot(q["t"], q["measured"], label=f"{eye} Eye",
                     color=color, linewidth=1.0)
             ax.plot(q["t"], q["held"], color=color, linewidth=1.0, linestyle="--")
             # Sparse markers identify held samples without dropping them to a fixed diameter.
             if len(q["held_t"]):
-                ax.scatter(q["held_t"], q["held_y"], color="#f59e0b", marker="x", s=5, alpha=0.5)
+                ax.plot(q["held_t"], [0.025] * len(q["held_t"]), "|",
+                        transform=ax.get_xaxis_transform(), color="#f59e0b",
+                        markersize=4, alpha=0.65)
 
     # Format Left Subplot (Red Phase)
-    ax1.set_title("Red Stimulus (0-60s)")
-    ax1.set_xlim(0, 60)
+    ax1.set_title("Red Stimulus (0-32s)")
+    ax1.set_xlim(0, 32)
     ax1.set_xlabel("Time (s)")
     ax1.set_ylabel("Pupil Diameter (mm)")
     ax1.set_ylim(1.5, 8.5)
     ax1.grid(True, linestyle='--', alpha=0.6)
     
     # Format Right Subplot (Blue Phase)
-    ax2.set_title("Blue Stimulus (120-180s)")
-    ax2.set_xlim(120, 180)
+    ax2.set_title("Blue Stimulus (47-90s)")
+    ax2.set_xlim(47, 90)
     ax2.set_xlabel("Time (s)")
     ax2.grid(True, linestyle='--', alpha=0.6)
     
@@ -72,7 +100,7 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
     
     plt.tight_layout()
     fig.subplots_adjust(top=0.82, bottom=0.19)
-    fig.text(0.5, 0.035, "Dashed / orange: last valid value held; not a measured pupil diameter.", ha="center", fontsize=8) 
+    fig.text(0.5, 0.035, "Orange ticks identify rejected tracking samples; filtered graph is display-only.", ha="center", fontsize=8) 
     
     buf = io.BytesIO()
     plt.savefig(buf, format='png', dpi=150)
@@ -90,12 +118,25 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
     p_hba1c = patient_details.get("hba1c", "") or "Not Tested"
     p_bp = patient_details.get("bp", "") or "Not Recorded"
     
+    # Escape patient-supplied text in HTML; use JSON for JavaScript values.
+    safe = dict((k, esc(v)) for k, v in {
+        'dr_name': dr_name, 'dr_license': dr_license, 'p_name': p_name,
+        'p_dob': p_dob, 'p_sex': p_sex, 'p_status': p_status,
+        'p_hba1c': p_hba1c, 'p_bp': p_bp,
+        'patient_id': patient_id, 'prediction': prediction,
+    }.items())
+    js_patient_id = json.dumps(str(patient_id))
+    js_dr_name = json.dumps(str(dr_name))
+    js_dr_license = json.dumps(str(dr_license))
+    js_prediction = json.dumps(str(prediction))
+    js_confidence = json.dumps(str(confidence))
+
     # HTML TEMPLATE WITH BROWSER-SIDE html2pdf.js INTEGRATION
     html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <title>TANGLAWAN Diagnostic Report - {patient_id}</title>
+        <title>TANGLAWAN Research Report - {safe["patient_id"]}</title>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
         <style>
             body {{ 
@@ -157,7 +198,7 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
             <div class="header">
                 <div>
                     <h1>TANGLAWAN Pupillometry System</h1>
-                    <p style="margin: 5px 0 0 0; color: #475569;">Automated Clinical AI Diagnostic Report</p>
+                    <p style="margin: 5px 0 0 0; color: #475569;">AI-Assisted Chromatic Pupillometry Assessment Report</p>
                 </div>
                 <div class="timestamp">Tested: {timestamp}</div>
             </div>
@@ -166,8 +207,8 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
                 <div class="info-box">
                     <h3>Physician Information</h3>
                     <table class="info-table">
-                        <tr><th>Ophthalmologist:</th><td>Dr. {dr_name}</td></tr>
-                        <tr><th>License No:</th><td>{dr_license}</td></tr>
+                        <tr><th>Ophthalmologist:</th><td>Dr. {safe["dr_name"]}</td></tr>
+                        <tr><th>License No:</th><td>{safe["dr_license"]}</td></tr>
                         <tr><th>Device Node:</th><td>Jetson Nano Edge AI</td></tr>
                     </table>
                 </div>
@@ -175,34 +216,44 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
                 <div class="info-box">
                     <h3>Patient Information</h3>
                     <table class="info-table">
-                        <tr><th>Patient ID:</th><td><b>{patient_id}</b></td></tr>
-                        <tr><th>Full Name:</th><td>{p_name}</td></tr>
-                        <tr><th>Date of Birth:</th><td>{p_dob}</td></tr>
-                        <tr><th>Sex:</th><td>{p_sex}</td></tr>
+                        <tr><th>Patient ID:</th><td><b>{safe["patient_id"]}</b></td></tr>
+                        <tr><th>Full Name:</th><td>{safe["p_name"]}</td></tr>
+                        <tr><th>Date of Birth:</th><td>{safe["p_dob"]}</td></tr>
+                        <tr><th>Sex:</th><td>{safe["p_sex"]}</td></tr>
                     </table>
                 </div>
             </div>
             
             <div class="info-box" style="margin-bottom: 20px;">
-                <h3>Clinical Metrics</h3>
+                <h3>Participant Health Information</h3>
                 <table class="info-table" style="display: grid; grid-template-columns: 1fr 1fr;">
                     <tbody>
-                        <tr><th>General Status:</th><td>{p_status}</td></tr>
-                        <tr><th>HbA1c Level:</th><td>{p_hba1c}</td></tr>
-                        <tr><th>Blood Pressure:</th><td>{p_bp}</td></tr>
+                        <tr><th>General Status:</th><td>{safe["p_status"]}</td></tr>
+                        <tr><th>HbA1c Level:</th><td>{safe["p_hba1c"]}</td></tr>
+                        <tr><th>Blood Pressure:</th><td>{safe["p_bp"]}</td></tr>
                     </tbody>
                 </table>
             </div>
             
             <div class="result-box">
-                <div class="result-title">1D-CNN Inference Result</div>
-                <div class="result-value">{prediction}</div>
-                <div style="margin-top: 10px; color: #475569; font-size: 1.1rem;">Diagnostic Confidence: <b style="color: #0f172a;">{confidence}%</b></div>
+                <div class="result-title">AI-Assisted PLR Classification</div>
+                <div class="result-value">{safe["prediction"]}</div>
+                <div style="margin-top: 10px; color: #475569; font-size: 1.1rem;">Model Score (uncalibrated): <b style="color: #0f172a;">{confidence}%</b></div>
             </div>
             
+            <div class="info-box" style="margin-bottom: 20px;">
+                <h3>Model Output and Recording Quality</h3>
+                <p>Model version: <b>{version}</b> &nbsp;|&nbsp; Training source: <b>{training_label}</b>. Model scores describe the network output and are not calibrated disease probabilities.</p>
+                {score_table}
+                {quality_table}
+                <p style="font-size: 0.85rem; color: #9a3412;"><b>Interpretation:</b> {warning}</p>
+                <p style="font-size: 0.85rem; color: #64748b;">{esc(validation_note)}</p>
+            </div>
+
             <div class="graph-box">
                 <img src="data:image/png;base64,{img_b64}">
             </div>
+            <p style="font-size: 0.78rem; color: #64748b; margin-top: 12px;">Automated PLR model assessment. Findings require clinical correlation and must not replace ophthalmic evaluation. Model version: {version}; training source: {training_label}.</p>
         </div>
         
         <div class="action-container">
@@ -211,7 +262,7 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
             
             <div class="footer">
                 This report was generated automatically by the TANGLAWAN Edge Inference pipeline. <br>
-                <i>Designed for research and screening purposes. Not a definitive medical diagnosis.</i>
+                <i>Automated model output; interpretation is subject to the model version and its documented validation status.</i>
             </div>
         </div>
         
@@ -267,11 +318,11 @@ def generate_diagnostic_report(state, patient_details, prediction, confidence):
                     const publicPdfUrl = `https://zkmtfpeoihcxamtjatgh.supabase.co/storage/v1/object/public/tanglawan_pdfs/${{pdfFilename}}`;
                     
                     const payload = {{
-                        patient_id: "{patient_id}",
-                        dr_name: "{dr_name}",
-                        dr_license: "{dr_license}",
-                        diagnosis: "{prediction}",
-                        confidence: "{confidence}",
+                        patient_id: {js_patient_id},
+                        dr_name: {js_dr_name},
+                        dr_license: {js_dr_license},
+                        diagnosis: {js_prediction},
+                        confidence: {js_confidence},
                         timestamp: "{file_time}",
                         report_html_b64: publicPdfUrl
                     }};

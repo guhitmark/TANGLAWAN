@@ -6,11 +6,11 @@ from controllers.pupil_pipeline import PupilPipeline
 from controllers.tracker_config import TARGET_FPS
 from .mode_manager import TrackerModeOverride
 
-# UPDATED: Total clinical protocol time changed from 300 to 180 seconds (3 minutes)
-PROTOCOL_TOTAL_SECONDS = 180
-# UPDATED: Red window remains 0-60. Blue window shifts to 120-180.
-RED_WINDOW = (0, 60)
-BLUE_WINDOW = (120, 180)
+# TANGLAWAN proposed 90-second study protocol (requires optical safety review)
+PROTOCOL_TOTAL_SECONDS = 90
+# Red response until 32s; blue baseline begins 47s.
+RED_WINDOW = (0, 32)
+BLUE_WINDOW = (47, 90)
 
 DIAGNOSIS_OPTIONS = [
     "Select Diagnosis...",
@@ -44,7 +44,7 @@ class SessionState:
         self.diagnosis = DIAGNOSIS_OPTIONS[0]
         self.left_enabled = True
         self.right_enabled = True
-        self.save_mp4 = True
+        self.save_mp4 = False
 
         self.transform = {
             "L": {"flip_h": False, "flip_v": False, "rotate": 1},
@@ -91,21 +91,19 @@ class SessionState:
             return "DATASET RECORDING [60s]"
             
         if elapsed_s < 10:
-            return "BASELINE [RED]"
-        elif elapsed_s < 11:
-            return "STIMULUS: RED PULSE"
-        elif elapsed_s < 60:
-            return "PIPR [RED]"
-        # UPDATED: Dark adaptation now correctly spans exactly 60 seconds (60s to 120s)
-        elif elapsed_s < 120:
-            return "DARK ADAPTATION"
-        # UPDATED: Blue sequence begins at 120s
-        elif elapsed_s < 130:
-            return "BASELINE [BLUE]"
-        elif elapsed_s < 131:
-            return "STIMULUS: BLUE PULSE"
-        elif elapsed_s < 180:
-            return "PIPR [BLUE]"
+            return "DARK BASELINE [RED]"
+        elif elapsed_s < 12:
+            return "STIMULUS: RED 2s"
+        elif elapsed_s < 32:
+            return "RED RECOVERY"
+        elif elapsed_s < 47:
+            return "DARK WASHOUT"
+        elif elapsed_s < 57:
+            return "DARK BASELINE [BLUE]"
+        elif elapsed_s < 59:
+            return "STIMULUS: BLUE 2s"
+        elif elapsed_s < 90:
+            return "BLUE RECOVERY / PIPR"
         else:
             return "SEQUENCE COMPLETE"
 

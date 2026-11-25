@@ -1,6 +1,6 @@
 """Phase-aware PLR display/export stabilization; never changes raw observations.
 
-Elapsed times (seconds): red flash 10–11, blue flash 130–131.
+Elapsed times (seconds): red pulse 10–12, blue pulse 57–59.
 Held values are visualization estimates, NOT measured diameters.
 V4 rejects narrow returning artifacts even inside protected windows.
 Short gaps are bridged for display only; CSV holds remain explicit.
@@ -15,7 +15,7 @@ import numpy as np
 
 MIN_CONFIDENCE = 0.5
 MIN_MM, MAX_MM = 1.0, 9.0
-PROTECTED = ((9.75, 14.5), (129.75, 134.5))
+PROTECTED = ((9.75, 15.3), (56.75, 62.3))
 BLINK_PAD_S = 0.12
 # Engineering thresholds; verify against raw eye video.
 TRANSIENT_MM = 0.11
@@ -25,14 +25,14 @@ SHOULDER_RADIUS_S = 0.13
 SHOULDER_OFFSETS_S = (0.18, 0.30, 0.45, 0.65, 0.85, 1.10)
 SHOULDER_AGREEMENT_MM = 0.20
 # Robust two-stage smoothing, outside the protected stimulus response.
-SMOOTH_RADIUS_S = 0.35
-GAUSSIAN_SIGMA_S = 0.22
-GAUSSIAN_RADIUS_S = 0.66
+SMOOTH_RADIUS_S = 0.43
+GAUSSIAN_SIGMA_S = 0.27
+GAUSSIAN_RADIUS_S = 0.81
 PROTECTION_BLEND_S = 0.40
 # Display-only marker lane, visible in the current PNG/HTML/report axes.
 MARKER_LANE_MM = 1.8
 MAX_SAMPLE_GAP_S = 0.45
-FILTER_VERSION = 'plr_stabilizer_v4'
+FILTER_VERSION = 'plr_stabilizer_90s_v5'
 # Conservative narrow-spike detector (also active during the trigger).
 TRIGGER_SPIKE_MM = 0.40
 CORE_SPIKE_MM = 0.75
@@ -40,8 +40,8 @@ TRIGGER_SPIKE_EDGE_MM = 0.14
 TRIGGER_SPIKE_MAX_S = 0.42
 # Display-only: bridge short gaps, never extrapolate or bridge longer gaps.
 DISPLAY_BRIDGE_MAX_S = 2.6
-DISPLAY_SIGMA_S = 0.29
-DISPLAY_TRIGGER_SIGMA_S = 0.065
+DISPLAY_SIGMA_S = 0.40
+DISPLAY_TRIGGER_SIGMA_S = 0.10
 DISPLAY_BLEND_S = 0.6
 
 
@@ -62,9 +62,9 @@ def protected(t):
 
 
 def phase(t):
-    if 0 <= t <= 60:
+    if 0 <= t <= 32:
         return 'red'
-    if 120 <= t <= 180:
+    if 47 <= t <= 90:
         return 'blue'
     return None
 
@@ -152,7 +152,7 @@ def _trigger_spikes(t, y, accepted, protect):
             dev[i] = max(min(l,r)-y[i], y[i]-max(l,r), 0.0)
         edges = np.flatnonzero(np.diff(np.r_[False, dev >= TRIGGER_SPIKE_EDGE_MM, False]))
         for st,en in zip(edges[::2],edges[1::2]):
-            core = any(onset <= t[st] <= onset + 2.1 for onset in (10.,130.))
+            core = any(onset <= t[st] <= onset + 2.1 for onset in (10.,57.))
             threshold = CORE_SPIKE_MM if core else TRIGGER_SPIKE_MM
             duration = 0.23 if core else TRIGGER_SPIKE_MAX_S
             if t[en-1]-t[st] <= duration and np.max(dev[st:en]) >= threshold:
@@ -231,6 +231,7 @@ def _phase_filter(rows):
                      (r.get('confidence') is None or number(r['confidence']) >= MIN_CONFIDENCE)
                      for r in rows], dtype=bool)
     good &= np.isfinite(y) & (y >= MIN_MM) & (y <= MAX_MM)
+    good &= np.array([not flag(r.get('blink_repaired', False)) for r in rows], dtype=bool)
     reason = np.where(good, 'measured', 'tracking_lost').astype(object)
     accepted = good.copy()
     # Eyelid edges often remain marked valid just before/after a blink.
@@ -387,7 +388,7 @@ def add_filtered_csv(path, output_path=None):
         raise ValueError('Missing timestamp_s, valid or diameter columns: '+str(path))
     source = 'smoothed_mm' if 'smoothed_mm' in columns else 'diameter_mm'
     session = [dict(t=r['timestamp_s'], y=r[source], valid=r['valid'],
-                    confidence=r.get('confidence')) for r in rows]
+                    confidence=r.get('confidence'), blink_repaired=r.get('blink_repaired', 0)) for r in rows]
     cleaned = stabilize_session(session)
     # Estimate existing calibration, not a newly invented constant.
     ratios = []

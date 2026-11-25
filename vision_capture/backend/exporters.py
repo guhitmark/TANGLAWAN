@@ -49,8 +49,8 @@ def export_graph_png(session_data_eye, export_path, title):
     fig.suptitle(title, fontsize=13, fontweight="bold")
 
     for ax, xlim, label, color in [
-        (ax_red,  (0,   60),  "Red Stimulus PLR",  "#dc2626"),
-        (ax_blue, (120, 180), "Blue Stimulus PLR", "#2563eb"),
+        (ax_red,  (0,   32),  "Red Stimulus PLR",  "#dc2626"),
+        (ax_blue, (47, 90), "Blue Stimulus PLR", "#2563eb"),
     ]:
         ax.set_title(label, color=color, fontweight="bold")
         ax.set_xlim(*xlim)
@@ -95,15 +95,15 @@ def export_interactive_html(session_data_eye, export_path, title):
         fig.add_trace(go.Scatter(x=q["t"], y=q["held"], mode="lines", connectgaps=False,
                      name=name + " held (not measured)", line=dict(color=color, width=2, dash="dash")))
         if len(q["held_t"]):
-            fig.add_trace(go.Scatter(x=q["held_t"], y=q["held_y"], mode="markers",
-                         name=name + " lost / artifact", marker=dict(color="#f59e0b", symbol="x", size=5)))
+            fig.add_trace(go.Scatter(x=q["held_t"], y=[1.04]*len(q["held_t"]), mode="markers",
+                         name=name + " quality flag (bottom)", marker=dict(color="#f59e0b", symbol="line-ns-open", size=5)))
 
     fig.update_layout(
         title=f"Interactive PLR — {title}",
         xaxis_title="Time (s)", yaxis_title="Pupil Diameter (mm)",
         template="plotly_dark", hovermode="x unified", dragmode="zoom",
         yaxis=dict(range=[1.0, 9.0]),
-        xaxis=dict(range=[0, 180], rangeslider=dict(visible=True, thickness=0.08)),
+        xaxis=dict(range=[0, 90], rangeslider=dict(visible=True, thickness=0.08)),
     )
     fig.write_html(export_path, config={"scrollZoom": True, "displayModeBar": True})
 
@@ -122,7 +122,8 @@ def export_metadata_json(state, export_path, eye_label, r_met, b_met):
         "left_enabled":   state.left_enabled,
         "right_enabled":  state.right_enabled,
         "save_mp4":       False,
-        "clinical_metrics_source": "Existing metrics engine; not recomputed from display holds",
+        "protocol": {"duration_s": 90, "red_onset_s": 10, "red_offset_s": 12, "blue_onset_s": 57, "blue_offset_s": 59},
+        "clinical_metrics_source": "Existing metrics engine; NOT verified for new 90s trigger times",
         "clinical_metrics": {
             "red_stimulus":  dict(zip(PARAM_LABELS, r_met)),
             "blue_stimulus": dict(zip(PARAM_LABELS, b_met)),
@@ -167,7 +168,7 @@ def export_all(state):
     export_status = []
 
     elapsed_s  = state.elapsed()
-    recorded_s = min(60, elapsed_s) + max(0, min(60, elapsed_s - 120))
+    recorded_s = min(32.0, elapsed_s) + max(0.0, min(43.0, elapsed_s - 47.0))
     recorded_s = max(1.0, recorded_s)
 
     fps_L = max(1.0, state.frames_captured_L / recorded_s) if state.frames_captured_L > 0 else 30.0

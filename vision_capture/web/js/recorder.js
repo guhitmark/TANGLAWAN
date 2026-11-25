@@ -10,6 +10,13 @@ let dragging = { L: null, R: null };
 let dragStart = { L: null, R: null };
 let activeLabEye = null;
 
+// Completion survives a server-side stop and subsequent status polls.
+let completionShown = false;
+let stopRequested = false;
+let lastRecordingElapsed = 0;
+let previousRecording = false;
+let statusPollPending = false;
+
 let sessionHistory = { L: [], R: [] }; 
 
 let redChartInstance = null;
@@ -332,6 +339,15 @@ function executeFinalSave() {
 
 function cmd(action) {
     if (action === "start") {
+        completionShown = false;
+        stopRequested = false;
+        lastRecordingElapsed = 0;
+        previousRecording = false;
+        const completionModal = document.getElementById('completion-modal');
+        if (completionModal) {
+            completionModal.classList.add('modal-hidden');
+            completionModal.classList.remove('active-modal');
+        }
         resetCharts();
         sessionHistory = { L: [], R: [] }; 
         const pid = document.getElementById("patient-id").value.trim();
@@ -353,6 +369,10 @@ function cmd(action) {
 
 
 function startAnotherTrial() {
+    completionShown = false;
+    stopRequested = false;
+    lastRecordingElapsed = 0;
+    previousRecording = false;
     // 1. Instantly hide any popups
     let modal = document.getElementById('completion-modal');
     if (modal) {
@@ -516,15 +536,51 @@ class MiniChart {
         this.data = [];
         this.minX = minX;
         this.maxX = maxX;
-        this.minY = 1.0; 
+        this.minY = 1.0;
+        this.lastGood = null;
+        this.maxJump = 0.55;  // mm per 500 ms, conservative live display heuristic
+        this.pending = null; // isolated dropout candidate; validate when next point arrives
+        this.smoothed = null;
         this.maxY = 9.0;
     }
     
-    clear() { this.data = []; this.draw(); }
+    clear() { this.data = []; this.lastGood = null; this.pending = null; this.smoothed = null; this.draw(); }
     
-    addPoint(x, y, autoDraw = true) { 
-        this.data.push({x, y}); 
-        if (autoDraw) this.draw(); 
+    addPoint(x, y, autoDraw = true) {
+        // Causal 500-ms display smoothing; does NOT alter recorder/export data.
+        // Hold when confidence is lost, avoid invalid step to zero.
+        let candidate = Number.isFinite(y) && y >= 1.0 && y <= 9.0 ? y : null;
+        if (candidate === null) {
+            this.pending = null;
+            this.data.push({x, y: this.smoothed, missing: true});
+        } else if (this.lastGood === null) {
+            this.lastGood = candidate;
+            this.smoothed = candidate;
+            this.data.push({x, y: candidate, missing: false});
+        } else {
+            const delta = candidate - this.lastGood;
+            const onset = (this.minX === 0 && x >= 10 && x <= 15) ||
+                          (this.minX === 47 && x >= 57 && x <= 62);
+            // During stimulation, allow faster *real* constriction; still
+            // reject implausible single-frame tracking losses.
+            const threshold = onset ? 1.0 : this.maxJump;
+            if (Math.abs(delta) > threshold && this.pending === null) {
+                this.pending = candidate;
+                this.data.push({x, y: this.smoothed, missing: true});
+            } else {
+                const confirmed = this.pending !== null && Math.abs(candidate - this.pending) < 0.28;
+                this.pending = null;
+                if (Math.abs(delta) <= threshold || confirmed) {
+                    this.lastGood = candidate;
+                    // Smooth visual curve without preventing gradual sustained response.
+                    this.smoothed += (onset ? 0.65 : 0.32) * (candidate - this.smoothed);
+                    this.data.push({x, y: this.smoothed, missing: false});
+                } else {
+                    this.data.push({x, y: this.smoothed, missing: true});
+                }
+            }
+        }
+        if (autoDraw) this.draw();
     }
     
     draw() {
@@ -554,7 +610,7 @@ class MiniChart {
         let hasStarted = false;
         
         this.data.forEach((pt) => {
-            if (pt.y !== null) {
+            if (pt.y !== null && Number.isFinite(pt.y)) {
                 let px = ((pt.x - this.minX) / (this.maxX - this.minX)) * w;
                 let clampedY = Math.max(this.minY, Math.min(this.maxY, pt.y));
                 let py = padY + usableH - ((clampedY - this.minY) / (this.maxY - this.minY)) * usableH;
@@ -571,7 +627,7 @@ class MiniChart {
 
         this.ctx.fillStyle = '#f59e0b'; 
         this.data.forEach((pt) => {
-            if (pt.y === null) {
+            if (pt.missing || pt.y === null) {
                 let px = ((pt.x - this.minX) / (this.maxX - this.minX)) * w;
                 this.ctx.fillRect(px - 2, h - padY + 4, 4, 8);
             }
@@ -580,9 +636,9 @@ class MiniChart {
 }
 
 function initCharts() {
-    redChartInstance  = new MiniChart('chartRed',  '#ef4444', 0,   60);
-    // UPDATED: Shifted X-axis constraints for Blue chart to [120, 180]
-    blueChartInstance = new MiniChart('chartBlue', '#3b82f6', 120, 180);
+    redChartInstance  = new MiniChart('chartRed',  '#ef4444', 0,   32);
+    // Blue baseline + stimulus + recovery: [47, 90]
+    blueChartInstance = new MiniChart('chartBlue', '#3b82f6', 47, 90);
     resetCharts();
 
     function fitCanvases() {
@@ -608,14 +664,14 @@ function resetCharts() {
     if (blueChartInstance) blueChartInstance.clear();
 }
 
-// UPDATED: Evaluates using the new 120-180 blue window
+// Red and blue phases follow the 90s protocol
 function updateCharts(elapsed, liveDiam) {
     if (document.getElementById("diagnosis").value === "RITNET_TRACKER") return;
-    if (elapsed <= 60 && redChartInstance)                                redChartInstance.addPoint(elapsed, liveDiam);
-    else if (elapsed >= 120 && elapsed <= 180 && blueChartInstance) blueChartInstance.addPoint(elapsed, liveDiam);
+    if (elapsed <= 32 && redChartInstance)                                redChartInstance.addPoint(elapsed, liveDiam);
+    else if (elapsed >= 47 && elapsed <= 90 && blueChartInstance) blueChartInstance.addPoint(elapsed, liveDiam);
 }
 
-// UPDATED: Maps session history to the new 120-180 blue window 
+// Restore each chart from 90s session history 
 function openLabView(eye) {
     activeLabEye = eye;
     resetCharts();
@@ -626,8 +682,8 @@ function openLabView(eye) {
     
     if (sessionHistory[eye] && !isTracker) { 
         sessionHistory[eye].forEach(pt => {
-            if (pt.x <= 60 && redChartInstance) redChartInstance.addPoint(pt.x, pt.y, false);
-            else if (pt.x >= 120 && pt.x <= 180 && blueChartInstance) blueChartInstance.addPoint(pt.x, pt.y, false);
+            if (pt.x <= 32 && redChartInstance) redChartInstance.addPoint(pt.x, pt.y, false);
+            else if (pt.x >= 47 && pt.x <= 90 && blueChartInstance) blueChartInstance.addPoint(pt.x, pt.y, false);
         });
         if (redChartInstance) redChartInstance.draw();
         if (blueChartInstance) blueChartInstance.draw();
@@ -679,66 +735,108 @@ function getValidDiam(liveData) {
     return y;
 }
 
-// UPDATED: Dynamically updates timer text mapping exactly to the 3-minute max time
+// The server owns the 90s auto-stop; the browser owns its completion modal.
+// Guard against overlapping 500ms requests, out-of-order responses and timer reset.
 function pollStatus() {
+    if (statusPollPending) return;
+    statusPollPending = true;
     fetch(`${API}/status`)
-        .then((r) => r.json())
+        .then((r) => {
+            if (!r.ok) throw new Error(`Status request failed: ${r.status}`);
+            return r.json();
+        })
         .then((data) => {
-            const diag = document.getElementById("diagnosis").value;
-            // 180 seconds for clinical protocol
-            const maxTime = diag === "RITNET_TRACKER" ? 60 : 180;
-            const maxTimeStr = diag === "RITNET_TRACKER" ? "01:00" : "03:00";
-            
-            let timerStr = `${String(Math.floor(data.elapsed / 60)).padStart(2, "0")}:${String(data.elapsed % 60).padStart(2, "0")} / ${maxTimeStr}`;
-            
-            const completionText = document.getElementById("completion-text");
+            const diag = document.getElementById('diagnosis').value;
+            const target = Number(data.protocol_duration) || (diag === 'RITNET_TRACKER' ? 60 : 90);
+            const elapsed = Number(data.elapsed) || 0;
+            const staged = Boolean(data.has_staged_data);
+            const recording = Boolean(data.is_recording);
+
+            if (recording) {
+                previousRecording = true;
+                lastRecordingElapsed = Math.max(lastRecordingElapsed, elapsed);
+            }
+            // A frozen timer can legitimately be 90 even when the session is stopped.
+            // Also accept the server's explicit completion flag.
+            const finished = Boolean(data.protocol_complete) ||
+                (staged && !recording && elapsed >= target) ||
+                (staged && !recording && previousRecording && lastRecordingElapsed >= target - 1);
+
+            const maxTimeStr = target === 60 ? '01:00' : '01:30';
+            const shownElapsed = (finished || (completionShown && staged)) ? target : elapsed;
+            const timerStr = `${String(Math.floor(shownElapsed / 60)).padStart(2, '0')}:${String(shownElapsed % 60).padStart(2, '0')} / ${maxTimeStr}`;
+
+            const completionText = document.getElementById('completion-text');
             if (completionText) {
-                completionText.innerText = diag === "RITNET_TRACKER" 
-                    ? "The 1-minute raw dataset recording has finished." 
-                    : "The 3-minute PLR diagnostic sequence has finished.";
+                completionText.innerText = target === 60
+                    ? 'The 1-minute raw dataset recording has finished.'
+                    : 'The 90-second PLR research sequence has finished.';
             }
 
-            document.getElementById("rec-status-badge").textContent = data.phase;
-            document.getElementById("rec-timer").textContent = timerStr;
-            
-            let labPhase = document.getElementById("lab-proto-phase");
-            if(labPhase) labPhase.textContent = data.phase;
-            let labTimer = document.getElementById("lab-proto-timer");
-            if(labTimer) labTimer.textContent = timerStr;
+            document.getElementById('rec-status-badge').textContent = finished
+                ? 'SEQUENCE COMPLETE' : data.phase;
+            document.getElementById('rec-timer').textContent = timerStr;
 
-            document.getElementById("btn-save").disabled    = !(data.has_staged_data && !data.is_recording);
-            document.getElementById("btn-discard").disabled = !data.has_staged_data;
+            const labPhase = document.getElementById('lab-proto-phase');
+            if (labPhase) labPhase.textContent = finished ? 'SEQUENCE COMPLETE' : data.phase;
+            const labTimer = document.getElementById('lab-proto-timer');
+            if (labTimer) labTimer.textContent = timerStr;
 
-            if (data.is_recording && !data.is_paused) {
-                let valL = getValidDiam(data.live.L);
-                let lastL = sessionHistory.L[sessionHistory.L.length - 1];
-                if (!lastL || lastL.x !== data.elapsed) sessionHistory.L.push({ x: data.elapsed, y: valL });
+            document.getElementById('btn-save').disabled = !(staged && !recording);
+            document.getElementById('btn-discard').disabled = !staged;
+            const popupSave = document.getElementById('btn-popup-save');
+            if (popupSave) popupSave.disabled = !(staged && !recording);
 
-                let valR = getValidDiam(data.live.R);
-                let lastR = sessionHistory.R[sessionHistory.R.length - 1];
-                if (!lastR || lastR.x !== data.elapsed) sessionHistory.R.push({ x: data.elapsed, y: valR });
+            if (recording && !data.is_paused) {
+                const valL = getValidDiam(data.live.L);
+                const lastL = sessionHistory.L[sessionHistory.L.length - 1];
+                const plotXL = lastL && Math.floor(lastL.x) === elapsed
+                    ? Math.min(elapsed + 0.95, lastL.x + 0.5) : elapsed;
+                if (!lastL || plotXL > lastL.x) sessionHistory.L.push({x: plotXL, y: valL});
+
+                const valR = getValidDiam(data.live.R);
+                const lastR = sessionHistory.R[sessionHistory.R.length - 1];
+                const plotXR = lastR && Math.floor(lastR.x) === elapsed
+                    ? Math.min(elapsed + 0.95, lastR.x + 0.5) : elapsed;
+                if (!lastR || plotXR > lastR.x) sessionHistory.R.push({x: plotXR, y: valR});
 
                 if (activeLabEye !== null && data.live[activeLabEye]) {
-                    updateCharts(data.elapsed, getValidDiam(data.live[activeLabEye]));
+                    const lastPt = sessionHistory[activeLabEye][sessionHistory[activeLabEye].length - 1];
+                    if (lastPt) updateCharts(lastPt.x, lastPt.y);
                 }
             }
 
             if (activeLabEye !== null && data.clinical[activeLabEye] && data.live[activeLabEye]) {
                 updateLabViewTable(data.clinical[activeLabEye], data.live[activeLabEye]);
             }
-            
-            let modal = document.getElementById('completion-modal');
-            if (modal && data.elapsed >= maxTime && data.has_staged_data && !modal.classList.contains('active-modal')) {
-                
-                if (data.is_recording) {
-                    fetch(`${API}/stop`, { method: "POST" });
-                }
 
+            const modal = document.getElementById('completion-modal');
+            // A one-time modal opening: do not reopen after Save Data.
+            if (finished && modal && !completionShown) {
+                completionShown = true;
                 modal.classList.remove('modal-hidden');
                 modal.classList.add('active-modal');
             }
+
+            // Normally the backend has already stopped. Fallback for older routes.
+            if (recording && elapsed >= target && !stopRequested) {
+                stopRequested = true;
+                fetch(`${API}/stop`, {method: 'POST'})
+                    .then(r => r.json())
+                    .then(result => {
+                        if (!result.ok) {
+                            stopRequested = false;
+                            console.error('Auto-stop unsuccessful:', result);
+                        }
+                    })
+                    .catch(error => {
+                        stopRequested = false;
+                        console.error('Auto-stop error:', error);
+                    });
+            }
         })
-        .catch(console.error);
+        .catch(console.error)
+        .finally(() => { statusPollPending = false; });
 }
 
 let batteryWarningShown = false;

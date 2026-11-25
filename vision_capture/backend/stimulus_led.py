@@ -20,25 +20,26 @@ PINS = {
 SW_PWM_FREQ = 300
 DUTY = {
     'L_BLUE': 100,
-    'R_BLUE': 79,
+    'R_BLUE': 100,
     'L_RED':  100,
-    'R_RED':  64,
+    'R_RED':  100,
 }
 
 RED_KEYS  = ('L_RED',  'R_RED')
 BLUE_KEYS = ('L_BLUE', 'R_BLUE')
 
 # ── Protocol Timings ───────────────────────────────────────────────
-# Clinical Diagnostic Timeline
+# Proposed 90-second clinical research timeline
 CLINICAL_RED_PULSE_AT_S  = 10
-# UPDATED: Blue pulse now occurs at 130 seconds (10s baseline + 50s PIPR + 60s readapt + 10s baseline)
-CLINICAL_BLUE_PULSE_AT_S = 130
+# Blue pulse begins at 57s after 47–57s baseline
+CLINICAL_BLUE_PULSE_AT_S = 57
 
 # Tracker Dataset (1-Minute) Timeline
 TRACKER_RED_PULSE_AT_S   = 10
 TRACKER_BLUE_PULSE_AT_S  = 40
 
-PULSE_DURATION_S = 1.0
+PULSE_DURATION_S = 2.0
+TRACKER_PULSE_DURATION_S = 1.0
 TICK_S           = 0.05
 
 # ── PWM Engine ─────────────────────────────────────────────────────
@@ -134,7 +135,7 @@ class StimulusController(threading.Thread):
         while self._running:
             now = time.time()
             
-            if getattr(self.state, 'is_recording', False):
+            if getattr(self.state, 'is_recording', False) and not getattr(self.state, 'is_paused', False):
                 
                 # Reset fire flags at the start of a new recording sequence
                 if not was_recording:
@@ -144,7 +145,7 @@ class StimulusController(threading.Thread):
                     blue_off_time = 0.0
                     was_recording = True
 
-                elapsed_s = int(now - self.state.start_time)
+                elapsed_s = now - self.state.start_time
                 is_tracker = getattr(self.state, 'tracker_mode', False)
 
                 # --- TRACKER DATASET PROTOCOL (1 MINUTE) ---
@@ -152,14 +153,14 @@ class StimulusController(threading.Thread):
                     if not red_fired and elapsed_s >= TRACKER_RED_PULSE_AT_S:
                         red_fired = True
                         self._set(RED_KEYS, True)
-                        red_off_time = now + PULSE_DURATION_S
+                        red_off_time = now + TRACKER_PULSE_DURATION_S
 
                     if not blue_fired and elapsed_s >= TRACKER_BLUE_PULSE_AT_S:
                         blue_fired = True
                         self._set(BLUE_KEYS, True)
-                        blue_off_time = now + PULSE_DURATION_S
+                        blue_off_time = now + TRACKER_PULSE_DURATION_S
 
-                # --- CLINICAL DIAGNOSTIC PROTOCOL (180 SECONDS) ---
+                # --- CLINICAL DIAGNOSTIC PROTOCOL (90 SECONDS) ---
                 else:
                     if not red_fired and elapsed_s >= CLINICAL_RED_PULSE_AT_S:
                         red_fired = True
@@ -172,7 +173,14 @@ class StimulusController(threading.Thread):
                         blue_off_time = now + PULSE_DURATION_S
                         
             else:
-                was_recording = False
+                # Hard OFF on pause or stop. Do not emit delayed pulses while paused.
+                if red_off_time or blue_off_time:
+                    self._set(RED_KEYS, False)
+                    self._set(BLUE_KEYS, False)
+                red_off_time = 0.0
+                blue_off_time = 0.0
+                if not getattr(self.state, 'is_recording', False):
+                    was_recording = False
 
             # --- NON-BLOCKING SHUTOFF LOGIC ---
             # The loop naturally checks if it's time to turn the LEDs off 

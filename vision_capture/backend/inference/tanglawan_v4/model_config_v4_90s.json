@@ -1,0 +1,260 @@
+{
+  "model_version": "v4_90s_hybrid",
+  "research_only": true,
+  "training_data_mode": "synthetic",
+  "protocol_segments_s": [
+    [
+      0,
+      10,
+      "dark_baseline"
+    ],
+    [
+      10,
+      12,
+      "red_constant"
+    ],
+    [
+      12,
+      32,
+      "red_recovery"
+    ],
+    [
+      32,
+      47,
+      "washout"
+    ],
+    [
+      47,
+      57,
+      "blue_baseline"
+    ],
+    [
+      57,
+      59,
+      "blue_constant"
+    ],
+    [
+      59,
+      90,
+      "blue_recovery"
+    ]
+  ],
+  "class_to_index": {
+    "LBL_0": 0,
+    "LBL_1": 1,
+    "LBL_2": 2
+  },
+  "class_names": {
+    "LBL_0": "Healthy",
+    "LBL_1": "Diabetic-DR",
+    "LBL_2": "Diabetic-NoDR"
+  },
+  "sampling_rate_hz": 20,
+  "stimulus_onsets_s": [
+    10.0,
+    57.0
+  ],
+  "pulse_duration_s": 2.0,
+  "duration_s": 90,
+  "cnn_windows_s": {
+    "red": [
+      8,
+      26
+    ],
+    "blue": [
+      55,
+      73
+    ]
+  },
+  "cnn_channels": [
+    "LE_relative",
+    "RE_relative",
+    "LE_velocity",
+    "RE_velocity"
+  ],
+  "input_names": [
+    "red_waveform",
+    "blue_waveform",
+    "biomarkers"
+  ],
+  "input_shapes": {
+    "red_waveform": [
+      1,
+      4,
+      360
+    ],
+    "blue_waveform": [
+      1,
+      4,
+      360
+    ],
+    "biomarkers": [
+      1,
+      39
+    ]
+  },
+  "assumed_blue_log_photons_cm2_s": 10.78,
+  "assumed_red_log_photons_cm2_s": 10.7,
+  "feature_names": [
+    "red_mean_baseline_mm",
+    "red_mean_peak_constriction_mm",
+    "red_mean_peak_constriction_pct",
+    "red_mean_latency_s",
+    "red_mean_time_to_peak_s",
+    "red_mean_max_constriction_mm_s",
+    "red_mean_max_dilation_mm_s",
+    "red_mean_recovery75_s",
+    "red_mean_pipr6_pct",
+    "red_mean_pipr10_pct",
+    "red_mean_pipr20_pct",
+    "red_mean_pipr30_pct",
+    "red_mean_pipr_auc_30_pct_s",
+    "blue_mean_baseline_mm",
+    "blue_mean_peak_constriction_mm",
+    "blue_mean_peak_constriction_pct",
+    "blue_mean_latency_s",
+    "blue_mean_time_to_peak_s",
+    "blue_mean_max_constriction_mm_s",
+    "blue_mean_max_dilation_mm_s",
+    "blue_mean_recovery75_s",
+    "blue_mean_pipr6_pct",
+    "blue_mean_pipr10_pct",
+    "blue_mean_pipr20_pct",
+    "blue_mean_pipr30_pct",
+    "blue_mean_pipr_auc_30_pct_s",
+    "red_asym_baseline_mm",
+    "red_asym_peak_constriction_pct",
+    "red_asym_latency_s",
+    "red_asym_pipr6_pct",
+    "red_asym_pipr20_pct",
+    "blue_asym_baseline_mm",
+    "blue_asym_peak_constriction_pct",
+    "blue_asym_latency_s",
+    "blue_asym_pipr6_pct",
+    "blue_asym_pipr20_pct",
+    "blue_red_peak_ratio",
+    "blue_minus_red_pipr6_pct",
+    "blue_minus_red_pipr20_pct"
+  ],
+  "biomarker_median": [
+    4.342532157897949,
+    2.0376617908477783,
+    46.83201217651367,
+    0.4000000059604645,
+    2.0250000953674316,
+    3.5279746055603027,
+    0.9773586988449097,
+    6.474999904632568,
+    11.614225387573242,
+    7.837932586669922,
+    2.8559889793395996,
+    0.6065546870231628,
+    228.63372802734375,
+    4.329834938049316,
+    2.189319610595703,
+    51.04734802246094,
+    0.375,
+    2.0250000953674316,
+    3.9158670902252197,
+    1.0732731819152832,
+    6.849999904632568,
+    13.318902969360352,
+    9.782208442687988,
+    4.389695167541504,
+    1.8343431949615479,
+    272.26153564453125,
+    0.07377994060516357,
+    1.2205142974853516,
+    0.04999995231628418,
+    0.5512661933898926,
+    0.5132817029953003,
+    0.0700523853302002,
+    1.2902793884277344,
+    0.0,
+    0.5814330577850342,
+    0.5431832671165466,
+    1.0807594060897827,
+    1.67326021194458,
+    1.391839861869812
+  ],
+  "biomarker_scale": [
+    0.7222145795822144,
+    0.46445363759994507,
+    10.469305038452148,
+    0.07412897795438766,
+    0.060229767113924026,
+    0.8628886342048645,
+    0.22640150785446167,
+    3.0392887592315674,
+    6.51723575592041,
+    5.954232692718506,
+    3.439549207687378,
+    1.8641505241394043,
+    133.01593017578125,
+    0.7133567333221436,
+    0.5125558376312256,
+    10.569146156311035,
+    0.07412900030612946,
+    0.09266123175621033,
+    1.1173478364944458,
+    0.2320387214422226,
+    7.690882205963135,
+    12.060908317565918,
+    10.509933471679688,
+    6.224647045135498,
+    3.0855557918548584,
+    252.81112670898438,
+    0.06576981395483017,
+    1.1495331525802612,
+    0.03706450015306473,
+    0.5688227415084839,
+    0.532923698425293,
+    0.06414759159088135,
+    1.3092252016067505,
+    0.03706448897719383,
+    0.5656623840332031,
+    0.4928756356239319,
+    0.052447933703660965,
+    4.3221282958984375,
+    2.550994634628296
+  ],
+  "normalization": "embedded in model; impute nonfinite biomarkers with training medians before inference",
+  "minimum_early_window_coverage": 0.7,
+  "max_cnn_gap_s": 1.5,
+  "confidence_min": 0.5,
+  "cv_best_epochs": [
+    41,
+    27,
+    19,
+    34,
+    28
+  ],
+  "final_epochs": 28,
+  "oof_metrics": {
+    "data_mode": "synthetic",
+    "hybrid": {
+      "accuracy": 1.0,
+      "balanced_accuracy": 1.0,
+      "macro_f1": 1.0,
+      "macro_auc_roc": 1.0,
+      "Healthy_sensitivity": 1.0,
+      "Healthy_specificity": 1.0,
+      "Diabetic-DR_sensitivity": 1.0,
+      "Diabetic-DR_specificity": 1.0,
+      "Diabetic-NoDR_sensitivity": 1.0,
+      "Diabetic-NoDR_specificity": 1.0
+    },
+    "biomarker_only": {
+      "accuracy": 1.0,
+      "balanced_accuracy": 1.0,
+      "macro_f1": 1.0,
+      "macro_auc_roc": 1.0,
+      "Healthy_sensitivity": 1.0,
+      "Healthy_specificity": 1.0,
+      "Diabetic-DR_sensitivity": 1.0,
+      "Diabetic-DR_specificity": 1.0,
+      "Diabetic-NoDR_sensitivity": 1.0,
+      "Diabetic-NoDR_specificity": 1.0
+    }
+  }
+}

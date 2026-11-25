@@ -1,92 +1,165 @@
-"""
-metrics.py
----------------------------------------------------------------------
-NEW FILE. Clinical PLR metrics, ported verbatim (math only) from the
-desktop app's video_panel.py -- the math itself never touched
-Tkinter, so this is a straight lift into a pure-function module.
----------------------------------------------------------------------
-"""
+"""TANGLAWAN 90-second research protocol: quality-aware PLR metrics.
 
+Red: baseline 0–10 s; fixed light 10–12 s; response through 32 s.
+Blue: baseline 47–57 s; fixed light 57–59 s; response through 90 s.
+
+Nine returned string values, in the original API order:
+ baseline (mm), minimum (mm), constriction amplitude (mm), latency (ms),
+ maximum constriction velocity (mm/s), average constriction velocity (mm/s),
+ PIPR 6 s (mm baseline-minus-diameter), maximum redilation velocity (mm/s),
+ 75% recovery (ms after minimum).
+
+Derived metrics are exploratory, *not validated clinical biomarkers*.
+Only measured, quality-accepted samples are used; no held/interpolated values.
+"""
 import math
 import numpy as np
 
+RED_BASELINE = (0.0, 10.0)
+RED_STIM = (10.0, 12.0)
+RED_END = 32.0
+BLUE_BASELINE = (47.0, 57.0)
+BLUE_STIM = (57.0, 59.0)
+BLUE_END = 90.0
+EMPTY = ("--",) * 9
 
-def calculate_clinical_metrics(times, diams, t_base_start, t_base_end, t_stim):
-    if not times or not diams:
-        return ("--",) * 9
 
-    t_arr = np.array(times)
-    y_arr = np.array(diams)
+def _good_number(v):
+    try:
+        x = float(v)
+        return x if math.isfinite(x) else float('nan')
+    except (ValueError, TypeError, OverflowError):
+        return float('nan')
 
-    valid_idx = ~np.isnan(y_arr)
-    t_arr = t_arr[valid_idx]
-    y_arr = y_arr[valid_idx]
-    if len(y_arr) == 0:
-        return ("--",) * 9
 
-    base_mask = (t_arr >= t_base_start) & (t_arr < t_base_end)
-    if not np.any(base_mask):
-        return ("--",) * 9
-    base_diam = np.nanmean(y_arr[base_mask])
+def _valid_flag(v):
+    if isinstance(v, str):
+        return v.strip().lower() in ('1', 'true', 'yes')
+    return bool(v)
 
-    post_mask = (t_arr >= t_stim)
-    if not np.any(post_mask):
-        return (f"{base_diam:.2f}",) + ("--",) * 8
 
-    min_diam = np.nanmin(y_arr[post_mask])
-    min_idx = np.nanargmin(y_arr[post_mask])
-    t_min = t_arr[post_mask][min_idx]
-    amp = base_diam - min_diam
+def _median_at(t, y, center, radius=0.15, min_n=2):
+    m = (t >= center-radius) & (t <= center+radius)
+    if m.sum() < min_n:
+        return float('nan')
+    return float(np.median(y[m]))
 
-    latency = "--"
-    for i, t in enumerate(t_arr[post_mask]):
-        if y_arr[post_mask][i] < (base_diam - 0.05):
-            latency = f"{int((t - t_stim) * 1000)}"
+
+def calculate_clinical_metrics(times, diams, t_base_start, t_base_end,
+                               t_stim, t_stim_off=None, t_end=None):
+    """Return the existing nine-metric tuple; optional arguments allow old callers.
+
+    Avoid fitting/smoothing across long tracking gaps. PIPR is the residual
+    constriction in mm at 6 seconds AFTER light offset, measured as baseline
+    minus median diameter in a 5–7 s post-offset window.
+    """
+    if times is None or diams is None or len(times) == 0 or len(diams) == 0:
+        return EMPTY
+    t = np.asarray(times, dtype=float)
+    y = np.asarray(diams, dtype=float)
+    if t.shape != y.shape:
+        return EMPTY
+    good = np.isfinite(t) & np.isfinite(y) & (y >= 1.0) & (y <= 9.0)
+    t, y = t[good], y[good]
+    if t.size < 5:
+        return EMPTY
+    order = np.argsort(t, kind='mergesort')
+    t, y = t[order], y[order]
+    if t_stim_off is None:
+        t_stim_off = float(t_stim) + 2.0
+    if t_end is None:
+        t_end = float(t[-1]) + 1e-6
+    # Never include the next stimulus, washout, or another phase.
+    window = (t >= t_base_start) & (t < t_end)
+    t, y = t[window], y[window]
+    base = (t >= t_base_start) & (t < t_base_end)
+    if base.sum() < 5:
+        return EMPTY
+    baseline = float(np.median(y[base]))
+
+    # Light onset through the first 8s: search for early peak constriction,
+    # not an arbitrary later minimum/late blink in the recovery window.
+    response = (t >= t_stim) & (t <= min(t_stim + 8.0, t_end))
+    if response.sum() < 4:
+        return (f'{baseline:.2f}',) + ('--',)*8
+
+    # 0.30 s moving median for extrema/velocities; do not fill missing frames.
+    sm = np.array([_median_at(t, y, v, 0.15, 2) for v in t])
+    sm[~np.isfinite(sm)] = y[~np.isfinite(sm)]
+    idx = np.flatnonzero(response)
+    i_min = idx[np.argmin(sm[idx])]
+    minimum = float(sm[i_min])
+    t_min = float(t[i_min])
+    amp = max(0.0, baseline-minimum)
+
+    # Require a sustained departure from baseline (at least ~150ms).
+    latency = '--'
+    threshold = max(0.05, 0.03 * baseline)
+    candidates = np.flatnonzero((t >= t_stim) & (t <= min(t_stim+5.0, t_end)) &
+                                 (sm <= baseline - threshold))
+    for i in candidates:
+        future = (t >= t[i]) & (t < t[i]+0.20)
+        if future.sum() >= 2 and np.median(sm[future]) <= baseline-threshold:
+            latency = str(int(round(1000.0*(t[i]-t_stim))))
             break
 
-    dy = np.diff(y_arr)
-    dt = np.diff(t_arr)
-    dt[dt == 0] = 0.001
-    velocities = dy / dt
+    # Central differences across close observed timestamps, avoid huge values
+    # from tiny frame-to-frame noise. Segments exceeding 0.35s aren't joined.
+    dt = np.diff(t)
+    dy = np.diff(sm)
+    valid_seg = (dt >= 0.015) & (dt <= 0.35)
+    velocity = np.full(dt.shape, np.nan)
+    velocity[valid_seg] = dy[valid_seg]/dt[valid_seg]
+    midpoint = (t[:-1]+t[1:])/2.0
+    con = (midpoint >= t_stim) & (midpoint <= t_min) & np.isfinite(velocity)
+    negative = -velocity[con]
+    negative = negative[negative > 0]
+    max_c = f'{np.max(negative):.2f}' if negative.size else '--'
+    avg_c = f'{np.mean(negative):.2f}' if negative.size else '--'
 
-    constrict_mask = (t_arr[:-1] >= t_stim) & (t_arr[:-1] <= t_min)
-    if np.any(constrict_mask):
-        avg_c_vel = f"{abs(np.nanmean(velocities[constrict_mask])):.2f}"
-        max_c_vel = f"{abs(np.nanmin(velocities[constrict_mask])):.2f}"
-    else:
-        avg_c_vel, max_c_vel = "--", "--"
+    redil = (midpoint > t_min) & (midpoint <= t_end) & np.isfinite(velocity)
+    pos = velocity[redil]
+    pos = pos[pos > 0]
+    max_r = f'{np.max(pos):.2f}' if pos.size else '--'
 
-    redil_mask = (t_arr[:-1] > t_min)
-    max_r_vel = f"{np.nanmax(velocities[redil_mask]):.2f}" if np.any(redil_mask) else "--"
+    # 6s PIPR: median at 5–7 seconds after light offset.
+    pipr_window = (t >= t_stim_off+5) & (t <= t_stim_off+7)
+    pipr = '--'
+    if pipr_window.sum() >= 3:
+        pipr = f'{baseline-np.median(y[pipr_window]):.2f}'
 
-    pipr_mask = (t_arr >= t_arr[-1] - 10)
-    pipr = f"{np.nanmean(y_arr[pipr_mask]):.2f}" if np.any(pipr_mask) else "--"
-
-    rec_75 = "--"
-    target_rec = min_diam + (0.75 * amp)
-    if np.any(redil_mask):
-        for i, t in enumerate(t_arr[:-1][redil_mask]):
-            if y_arr[:-1][redil_mask][i] >= target_rec:
-                rec_75 = f"{int((t - t_min) * 1000)}"
+    recovery = '--'
+    target = minimum + 0.75*amp
+    if amp >= 0.10:
+        for i in np.flatnonzero((t > t_min) & (t <= t_end) & (sm >= target)):
+            future = (t >= t[i]) & (t < t[i]+0.20)
+            if future.sum() >= 2 and np.median(sm[future]) >= target:
+                recovery = str(int(round(1000.0*(t[i]-t_min))))
                 break
 
-    return (f"{base_diam:.2f}", f"{min_diam:.2f}", f"{amp:.2f}", latency,
-            max_c_vel, avg_c_vel, pipr, max_r_vel, rec_75)
+    return (f'{baseline:.2f}', f'{minimum:.2f}', f'{amp:.2f}', latency,
+            max_c, avg_c, pipr, max_r, recovery)
 
 
 def get_clinical_report(session_data_eye):
-    """session_data_eye: list of {'t':.., 'y':.., 'valid':..} for ONE eye."""
-    t_r_v, y_r_v = [], []
-    t_b_v, y_b_v = [], []
-
-    for r in session_data_eye:
-        if not r["valid"] or math.isnan(r["y"]):
+    """Receive one eye's session rows with 't', 'y', 'valid'."""
+    red_t, red_y, blue_t, blue_y = [], [], [], []
+    for row in session_data_eye:
+        if not isinstance(row, dict) or not _valid_flag(row.get('valid', False)):
             continue
-        if r["t"] <= 60:
-            t_r_v.append(r["t"]); y_r_v.append(r["y"])
-        elif 240 <= r["t"] <= 300:
-            t_b_v.append(r["t"]); y_b_v.append(r["y"])
+        # Exclude held/reconstructed values if quality fields are supplied.
+        if _valid_flag(row.get('filter_held', False)) or _valid_flag(row.get('blink_repaired', False)):
+            continue
+        t, y = _good_number(row.get('t')), _good_number(row.get('y'))
+        if not (math.isfinite(t) and math.isfinite(y)):
+            continue
+        if RED_BASELINE[0] <= t <= RED_END:
+            red_t.append(t); red_y.append(y)
+        elif BLUE_BASELINE[0] <= t <= BLUE_END:
+            blue_t.append(t); blue_y.append(y)
 
-    r_met = calculate_clinical_metrics(t_r_v, y_r_v, 0, 10, 10)
-    b_met = calculate_clinical_metrics(t_b_v, y_b_v, 240, 250, 250)
-    return r_met, b_met
+    red = calculate_clinical_metrics(red_t, red_y, *RED_BASELINE,
+                                     RED_STIM[0], RED_STIM[1], RED_END)
+    blue = calculate_clinical_metrics(blue_t, blue_y, *BLUE_BASELINE,
+                                      BLUE_STIM[0], BLUE_STIM[1], BLUE_END)
+    return red, blue
